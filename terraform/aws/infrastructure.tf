@@ -245,7 +245,7 @@ resource "aws_db_instance" "main" {
   password               = var.mysql_password
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
-  skip_final_snapshot    = false
+  skip_final_snapshot    = true
   multi_az               = true    # Automatic failover for high availability
   backup_retention_period = 7
 }
