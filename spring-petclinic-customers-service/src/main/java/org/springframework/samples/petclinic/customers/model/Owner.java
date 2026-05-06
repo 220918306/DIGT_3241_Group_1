@@ -58,6 +58,16 @@ public class Owner {
     @NotBlank
     private String city;
 
+    @Column(name = "phone_number")
+    private String phoneNumber;
+    public String getPhoneNumber() {
+        return phoneNumber;
+    }
+
+    public void setPhoneNumber(String phoneNumber) {
+        this.phoneNumber = phoneNumber;
+    }
+
     @Column(name = "telephone")
     @NotBlank
     @Digits(fraction = 0, integer = 12)
