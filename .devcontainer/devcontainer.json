@@ -21,6 +21,7 @@
       "extensions":[
         "vscjava.vscode-java-pack",
         "vscjava.vscode-maven",
+        "ms-azuretools.vscode-docker",
         "github.vscode-github-actions",
         "github.vscode-pull-request-github",
         "redhat.vscode-xml",
@@ -29,5 +30,14 @@
       ]
     },
   },
-  "forwardPorts": [8080, 8888, 8761]
+  "forwardPorts": [8080, 8081, 8082, 8083, 8888, 8761, 9090],
+  "portsAttributes": {
+    "8080": {"label": "api-gateway", "onAutoForward": "notify"},
+    "8081": {"label": "customers-service", "onAutoForward": "notify"},
+    "8082": {"label": "vets-service", "onAutoForward": "notify"},
+    "8083": {"label": "visits-service", "onAutoForward": "notify"},
+    "8888": {"label": "config-server", "onAutoForward": "notify"},
+    "8761": {"label": "discovery-server", "onAutoForward": "notify"},
+    "9090": {"label": "admin-server", "onAutoForward": "notify"}
+  }
 }
