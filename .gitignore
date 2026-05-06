@@ -1,3 +1,9 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+
+
 # Maven
 target/
 !.mvn/wrapper/maven-wrapper.jar
@@ -21,3 +27,5 @@ target/
 generated/
 
 **/.DS_Store
+
+

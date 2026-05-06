@@ -51,3 +51,8 @@ variable "max_image_count" {
   type        = number
   default     = 10
 }
+#Added this
+variable "image_tag" {
+  description = "Docker image tag"
+  type        = string
+}

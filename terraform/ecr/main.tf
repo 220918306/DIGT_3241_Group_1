@@ -34,8 +34,8 @@ locals {
     "visits-service",
     "genai-service",
     "admin-server",
-    "frontend",
   ]
+
   repo_names = {
     for svc in local.microservices :
     svc => var.repository_prefix != "" ? "${var.repository_prefix}/${svc}" : svc
@@ -112,4 +112,25 @@ resource "aws_ecr_repository_policy" "microservices" {
   for_each   = aws_ecr_repository.microservices
   repository = each.value.name
   policy     = data.aws_iam_policy_document.ecr_repo_policy.json
+}
+
+
+
+# Added this
+resource "null_resource" "docker_push" {
+  for_each = local.repo_names
+
+  provisioner "local-exec" {
+    command = <<EOT
+aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com
+
+docker tag springcommunity/spring-petclinic-${each.key}:latest ${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${each.value}:${var.image_tag}
+
+docker push ${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${each.value}:${var.image_tag}
+EOT
+  }
+
+  depends_on = [
+    aws_ecr_repository.microservices
+  ]
 }
