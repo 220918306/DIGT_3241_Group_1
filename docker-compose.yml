@@ -163,6 +163,11 @@ services:
           memory: 256M
     ports:
     - 3030:3000
+    environment:
+
+    - GF_AUTH_ANONYMOUS_ENABLED=false
+
+    - GF_SECURITY_ADMIN_PASSWORD=group5prj
 
   prometheus-server:
     build: ./docker/prometheus
