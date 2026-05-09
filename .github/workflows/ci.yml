@@ -103,29 +103,36 @@ jobs:
         env:
           ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
         run: |
-          find k8s/ -name '*.yaml' -exec sed -i \
-            "s|YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com|$ECR_REGISTRY|g" {} +
+          if [ -d "k8s/" ] && [ "$(find k8s/ -name '*.yaml' | head -1)" ]; then
+            echo "Updating image references in manifests..."
+            find k8s/ -name '*.yaml' -exec sed -i \
+              "s|YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com|$ECR_REGISTRY|g" {} +
 
-          kubectl apply -f k8s/ -n ${{ env.K8S_NAMESPACE }}
+            echo "Applying Kubernetes manifests..."
+            kubectl apply -f k8s/ -n ${{ env.K8S_NAMESPACE }}
 
-          DEPLOYMENTS=$(kubectl get deployments -n ${{ env.K8S_NAMESPACE }} \
-            -o name 2>/dev/null || true)
+            DEPLOYMENTS=$(kubectl get deployments -n ${{ env.K8S_NAMESPACE }} \
+              -o name 2>/dev/null || true)
 
-          if [ -n "$DEPLOYMENTS" ]; then
-            for DEPLOY in $DEPLOYMENTS; do
-              kubectl rollout restart $DEPLOY -n ${{ env.K8S_NAMESPACE }}
-            done
+            if [ -n "$DEPLOYMENTS" ]; then
+              for DEPLOY in $DEPLOYMENTS; do
+                kubectl rollout restart $DEPLOY -n ${{ env.K8S_NAMESPACE }}
+              done
 
-            for DEPLOY in $DEPLOYMENTS; do
-              kubectl rollout status $DEPLOY \
-                -n ${{ env.K8S_NAMESPACE }} --timeout=300s || true
-            done
+              for DEPLOY in $DEPLOYMENTS; do
+                kubectl rollout status $DEPLOY \
+                  -n ${{ env.K8S_NAMESPACE }} --timeout=300s || true
+              done
+            fi
+
+            echo ""
+            echo "=========================================="
+            echo "  DEPLOYMENT STATUS"
+            echo "=========================================="
+            kubectl get pods -n ${{ env.K8S_NAMESPACE }}
+            echo ""
+            kubectl get svc -n ${{ env.K8S_NAMESPACE }}
+          else
+            echo "No k8s/ manifests found. Skipping deployment."
+            echo "Waiting for P4, P5, P6 to add Kubernetes manifest files."
           fi
-
-          echo ""
-          echo "=========================================="
-          echo "  DEPLOYMENT STATUS"
-          echo "=========================================="
-          kubectl get pods -n ${{ env.K8S_NAMESPACE }}
-          echo ""
-          kubectl get svc -n ${{ env.K8S_NAMESPACE }}
