@@ -75,7 +75,7 @@ jobs:
     name: "CD: Deploy to EKS"
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/feature/ci-cd-pipeline' && github.event_name == 'push'
 
     steps:
       - name: Checkout code
