@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: config-server
-          image: <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/petclinic/spring-petclinic-config-server:latest
+          image: 989800606347.dkr.ecr.us-east-1.amazonaws.com/petclinic/spring-petclinic-config-server:latest
           ports:
             - containerPort: 8888
           env:

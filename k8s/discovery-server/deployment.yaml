@@ -29,7 +29,7 @@ spec:
               echo "Config server is ready!"
       containers:
         - name: discovery-server
-          image: <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/petclinic/spring-petclinic-discovery-server:latest
+          image: 989800606347.dkr.ecr.us-east-1.amazonaws.com/petclinic/spring-petclinic-discovery-server:latest
           ports:
             - containerPort: 8761
           env:
