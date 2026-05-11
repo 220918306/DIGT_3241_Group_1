@@ -1,25 +1,25 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: admin-server
+  name: api-gateway
   namespace: petclinic
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: admin-server
+      app: api-gateway
   template:
     metadata:
       labels:
-        app: admin-server
+        app: api-gateway
     spec:
       imagePullSecrets:
         - name: ecr-secret
       containers:
-        - name: admin-server
-          image: 045810265680.dkr.ecr.us-east-1.amazonaws.com/petclinic/admin-server:9caf48e
+        - name: api-gateway
+          image: 045810265680.dkr.ecr.us-east-1.amazonaws.com/petclinic/api-gateway:9caf48e
           ports:
-            - containerPort: 9090
+            - containerPort: 8080
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: kubernetes
@@ -28,9 +28,15 @@ spec:
           readinessProbe:
             httpGet:
               path: /actuator/health
-              port: 9090
+              port: 8080
             initialDelaySeconds: 60
             periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 120
+            periodSeconds: 20
           resources:
             requests:
               memory: 512Mi
@@ -38,6 +44,5 @@ spec:
             limits:
               memory: 768Mi
               cpu: 500m
-
 
 
