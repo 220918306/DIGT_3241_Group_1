@@ -250,7 +250,12 @@ pipeline {
 
 def getChangedServices() {
 
-    def changedFiles = sh(script: "git diff --name-only origin/${env.BRANCH_NAME}~1 origin/${env.BRANCH_NAME}", returnStdout: true).trim().split("\n")
+    def diffScript = """
+    git rev-parse --verify origin/${env.BRANCH_NAME}~1 > /dev/null 2>&1 \
+    && git diff --name-only origin/${env.BRANCH_NAME}~1 origin/${env.BRANCH_NAME} \
+    || git diff --name-only \$(git rev-list --max-parents=0 HEAD) HEAD
+    """
+    def changedFiles = sh(script: diffScript, returnStdout: true).trim().split("\n")
 
     def services = [
         'spring-petclinic-customers-service', 
