@@ -28,3 +28,7 @@ generated/
 *.log
 logs/
 **/logs/
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
