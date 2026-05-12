@@ -27,8 +27,8 @@ spec:
     spec:
       containers:
         - name: discovery-server
-          image: springcommunity/spring-petclinic-discovery-server:latest
-          imagePullPolicy: Never
+          image: YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/petclinic/discovery-server:latest
+          
           ports:
             - containerPort: 8761
           env:
@@ -36,4 +36,11 @@ spec:
               value: "docker"
             - name: CONFIG_SERVER_URL
               value: http://config-server:8888
+            - readinessProbe:
+              httpGet:
+                path: /actuator/health
+                port: 8761
+              initialDelaySeconds: 30
+              periodSeconds: 10
+
       
