@@ -25,6 +25,8 @@ spec:
               value: kubernetes
             - name: CONFIG_SERVER_URL
               value: http://config-server:8888
+            - name: SPRING_APPLICATION_JSON
+              value: '{"eureka":{"client":{"serviceUrl":{"defaultZone":"http://discovery-server:8761/eureka/"}}},"spring":{"cloud":{"gateway":{"discovery":{"locator":{"enabled":true,"lower-case-service-id":true}}}}}}'
           readinessProbe:
             httpGet:
               path: /actuator/health
@@ -44,5 +46,3 @@ spec:
             limits:
               memory: 768Mi
               cpu: 500m
-
-
