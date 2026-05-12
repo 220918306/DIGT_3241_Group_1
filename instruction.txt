@@ -1,0 +1,819 @@
+================================================================================
+P7 — DATABASE ADMINISTRATOR
+STEP-BY-STEP INSTRUCTION GUIDE
+Spring PetClinic Microservices on AWS EKS
+================================================================================
+
+WHO THIS IS FOR: You are P7, the Database Administrator. This guide walks you
+through every single thing you need to do from start to finish. Each step
+includes an explanation of WHY you are doing it, not just WHAT to type.
+
+================================================================================
+SECTION 0: BEFORE YOU START — UNDERSTANDING YOUR ROLE
+================================================================================
+
+What is your job in plain English?
+-----------------------------------
+You are responsible for making sure three MySQL databases are running inside
+the Kubernetes cluster on AWS. Three different backend services (customers,
+vets, visits) each need their own database to store data.
+
+Think of it this way:
+- customers-service stores owner profiles and pet records → needs customers-db
+- vets-service stores vet names and specialties → needs vets-db
+- visits-service stores appointment records → needs visits-db
+
+Each database is completely separate. This is the microservices way — no
+service touches another service's database.
+
+You do NOT write any application code. You deploy and manage the databases.
+
+What does "deploy a database to Kubernetes" mean?
+--------------------------------------------------
+Instead of installing MySQL on a physical server, you install it as a container
+inside the Kubernetes cluster. The cluster manages it just like any other pod.
+
+You will use Helm to do this. Helm has a pre-built MySQL chart (from Bitnami)
+that takes care of all the complicated setup. You just give it a configuration
+file (values file) with your database name, username, and password.
+
+What files will you produce?
+-----------------------------
+1. k8s/mysql-customers-values.yaml  — configuration for the customers database
+2. k8s/mysql-vets-values.yaml       — configuration for the vets database
+3. k8s/mysql-visits-values.yaml     — configuration for the visits database
+
+You will also create a Kubernetes Secret (via a command, not a file) that
+stores the database password securely.
+
+================================================================================
+SECTION 1: DAY 1 — SETUP & ORIENTATION
+================================================================================
+
+STEP 1.1: Install Required Tools
+----------------------------------
+EXPLANATION: Before you can do anything, you need the right software on your
+computer. These are the tools every DevOps engineer uses daily.
+
+Install Git (if not already installed):
+  Windows: Download from https://git-scm.com/download/win
+  Verify: git --version
+
+Install AWS CLI:
+  Windows: Download the MSI installer from:
+  https://awscli.amazonaws.com/AWSCLIV2.msi
+  Run the installer, then verify:
+  aws --version
+
+Install kubectl (Kubernetes CLI):
+  Windows PowerShell (run as Administrator):
+    curl.exe -LO "https://dl.k8s.io/release/v1.29.0/bin/windows/amd64/kubectl.exe"
+    mkdir -Force "$env:USERPROFILE\bin"
+    Move-Item -Force kubectl.exe "$env:USERPROFILE\bin\kubectl.exe"
+    # Add $env:USERPROFILE\bin to your PATH in System Environment Variables
+  Verify: kubectl version --client
+
+Install Helm:
+  Windows: Download from https://github.com/helm/helm/releases
+  Get the latest .zip for windows-amd64, extract it, move helm.exe to your PATH
+  Verify: helm version
+
+Install Docker Desktop:
+  Windows: Download from https://www.docker.com/products/docker-desktop/
+  This is needed to run the app locally on Day 1.
+
+STEP 1.2: Clone the Repository
+--------------------------------
+EXPLANATION: "Cloning" means downloading a copy of the project code to your
+computer. You will make changes to this copy and push them back to GitHub.
+
+  Command:
+    git clone https://github.com/PetClinic-Project-Team/spring-petclinic-microservices.git
+    cd spring-petclinic-microservices
+
+  After cloning, you should see these folders:
+    spring-petclinic-customers-service/
+    spring-petclinic-vets-service/
+    spring-petclinic-visits-service/
+    spring-petclinic-api-gateway/
+    ... and others
+
+STEP 1.3: Run the App Locally
+-------------------------------
+EXPLANATION: Before you deploy anything to the cloud, you must understand what
+the app does and how it looks when it is running. Docker Compose starts all
+the services on your laptop in one command.
+
+  Command:
+    docker-compose up
+
+  This will take a few minutes on first run (downloading images).
+  When ready, open your browser and go to: http://localhost:8080
+
+  What to do in the browser:
+  - Click "Find Owners" — you should see a list of pet owners
+  - Click on an owner — you should see their pets
+  - Click "Vets" — you should see a list of veterinarians
+
+  This is what you are going to deploy to AWS. When it works here locally,
+  you know the app itself is fine.
+
+  Stop it when done:
+    Press Ctrl+C in the terminal
+
+STEP 1.4: Locate and Study the Database Schema Files
+------------------------------------------------------
+EXPLANATION: "Schema" means the structure of a database — what tables exist,
+what columns they have. The schema.sql files tell MySQL what to create.
+The data.sql files insert sample data (like fake owners and pets).
+
+  Look at the schema files:
+
+  File 1 — Customers database schema:
+    Open: spring-petclinic-customers-service/src/main/resources/db/mysql/schema.sql
+
+    What it creates:
+    - types table: pet type (cat, dog, lizard, etc.)
+    - owners table: owner name, address, city, phone
+    - pets table: pet name, birth date, links to owner + type
+
+  File 2 — Vets database schema:
+    Open: spring-petclinic-vets-service/src/main/resources/db/mysql/schema.sql
+
+    What it creates:
+    - vets table: vet first name, last name
+    - specialties table: specialty names (radiology, surgery, dentistry)
+    - vet_specialties table: links which vet has which specialty
+
+  File 3 — Visits database schema:
+    Open: spring-petclinic-visits-service/src/main/resources/db/mysql/schema.sql
+
+    What it creates:
+    - visits table: pet_id, visit date, description
+
+  Also look at the data files (sample seed data):
+    spring-petclinic-customers-service/src/main/resources/db/mysql/data.sql
+    (10 owners, 13 pets loaded as sample data)
+
+    spring-petclinic-vets-service/src/main/resources/db/mysql/data.sql
+    (6 vets, 3 specialties loaded as sample data)
+
+  IMPORTANT: You do NOT run these files manually. When the customers-service,
+  vets-service, and visits-service start up with the mysql profile, Spring Boot
+  automatically runs schema.sql and data.sql for you. Your job is only to make
+  the empty MySQL database available for them to write to.
+
+STEP 1.5: Add the Bitnami Helm Repository
+-------------------------------------------
+EXPLANATION: Helm works like an app store. Before you can install MySQL via
+Helm, you need to add the "store" (Bitnami repository) where the MySQL chart
+is hosted.
+
+  Commands:
+    helm repo add bitnami https://charts.bitnami.com/bitnami
+    helm repo update
+    helm search repo bitnami/mysql
+
+  Expected output of last command: you should see a line with bitnami/mysql
+  and a version number. This confirms Helm can find the MySQL package.
+
+STEP 1.6: Configure AWS CLI
+-----------------------------
+EXPLANATION: The AWS CLI is how your terminal talks to AWS. You need to give
+it your credentials so it knows who you are and what AWS account to use.
+
+  Get your credentials from P2 (the AWS Infrastructure Engineer) or your
+  team lead. You need:
+  - AWS Access Key ID
+  - AWS Secret Access Key
+  - Region: us-east-1
+
+  Command:
+    aws configure
+
+  It will ask you one at a time:
+    AWS Access Key ID [None]: PASTE_YOUR_KEY_HERE
+    AWS Secret Access Key [None]: PASTE_YOUR_SECRET_HERE
+    Default region name [None]: us-east-1
+    Default output format [None]: json
+
+  Verify it works:
+    aws sts get-caller-identity
+
+  Expected output: a JSON showing your AccountId and UserId. If you see this,
+  AWS CLI is configured correctly.
+
+================================================================================
+SECTION 2: DAY 2 — WRITE YOUR HELM VALUES FILES
+================================================================================
+
+STEP 2.1: Create the k8s Directory
+-------------------------------------
+EXPLANATION: All Kubernetes-related files for this project are stored in a
+folder called k8s/. You will put your configuration files here.
+
+  Command:
+    mkdir k8s
+
+  (Skip this if the folder already exists — P4 may have created it first)
+
+STEP 2.2: Create the MySQL Values File for customers-db
+---------------------------------------------------------
+EXPLANATION: A Helm values file is a YAML configuration file that tells the
+Helm MySQL chart how to set up the database: what the database name is, what
+the username and password are, and how much disk space to give it.
+
+  Create the file: k8s/mysql-customers-values.yaml
+
+  Copy this content exactly (watch your indentation — YAML is space-sensitive):
+
+  ------------------------------------------------
+  auth:
+    rootPassword: petclinic-root
+    database: petclinic
+    username: petclinic
+    password: petclinic
+  primary:
+    persistence:
+      size: 1Gi
+  ------------------------------------------------
+
+  What each line means:
+  - rootPassword: the admin/root password for MySQL
+  - database: the name of the database to create (petclinic)
+  - username: the regular user account (petclinic)
+  - password: password for the regular user
+  - persistence.size: 1Gi means 1 gigabyte of disk space
+
+STEP 2.3: Create the MySQL Values File for vets-db
+----------------------------------------------------
+  Create the file: k8s/mysql-vets-values.yaml
+
+  Content (same configuration — each database is a separate MySQL instance):
+
+  ------------------------------------------------
+  auth:
+    rootPassword: petclinic-root
+    database: petclinic
+    username: petclinic
+    password: petclinic
+  primary:
+    persistence:
+      size: 1Gi
+  ------------------------------------------------
+
+STEP 2.4: Create the MySQL Values File for visits-db
+------------------------------------------------------
+  Create the file: k8s/mysql-visits-values.yaml
+
+  Content:
+
+  ------------------------------------------------
+  auth:
+    rootPassword: petclinic-root
+    database: petclinic
+    username: petclinic
+    password: petclinic
+  primary:
+    persistence:
+      size: 1Gi
+  ------------------------------------------------
+
+STEP 2.5: Commit Your Files to Git
+------------------------------------
+EXPLANATION: Committing saves your work to the shared team repository so
+everyone can see it. Think of it as saving + uploading.
+
+  Commands:
+    git add k8s/mysql-customers-values.yaml
+    git add k8s/mysql-vets-values.yaml
+    git add k8s/mysql-visits-values.yaml
+    git commit -m "feat(p7): add MySQL Helm values files for all 3 databases"
+    git push origin develop
+
+  After this, your teammates can see your files on GitHub.
+
+================================================================================
+SECTION 3: DAY 3 — DEPLOY DATABASES TO KUBERNETES
+================================================================================
+
+PREREQUISITE: P2 must have created the EKS cluster before you do this section.
+Ask P2: "Is the EKS cluster up? Can I get the kubeconfig?"
+
+STEP 3.1: Connect kubectl to the EKS Cluster
+----------------------------------------------
+EXPLANATION: By default, kubectl talks to whatever cluster it was last
+configured for. This command updates your kubectl configuration to point
+to the team's EKS cluster on AWS.
+
+  Command:
+    aws eks update-kubeconfig --name petclinic-cluster --region us-east-1
+
+  Verify it works:
+    kubectl get nodes
+
+  Expected output: You should see 2-3 nodes in "Ready" status.
+  If you see nodes, your kubectl is connected to the right cluster.
+
+STEP 3.2: Check that the Namespace Exists
+-------------------------------------------
+EXPLANATION: A Kubernetes namespace is like a folder that groups all the
+project's resources together. P2 should have created the spring-petclinic
+namespace. All your work goes in this namespace.
+
+  Command:
+    kubectl get namespaces
+
+  You should see spring-petclinic in the list.
+  If it is NOT there, create it:
+    kubectl create namespace spring-petclinic
+
+STEP 3.3: Create the Database Secret
+--------------------------------------
+EXPLANATION: A Kubernetes Secret stores sensitive data (passwords) in a way
+that is more secure than putting passwords directly in config files. The
+backend services (customers-service, vets-service, visits-service) will
+read the database password from this secret, not from a hardcoded config.
+
+  Command:
+    kubectl create secret generic petclinic-db-secret \
+      --from-literal=mysql-root-password=petclinic-root \
+      --from-literal=mysql-password=petclinic \
+      --from-literal=mysql-user=petclinic \
+      -n spring-petclinic
+
+  Verify the secret was created:
+    kubectl get secret petclinic-db-secret -n spring-petclinic
+
+  Expected output: You should see a line showing the secret exists.
+
+  To see what's inside the secret (passwords are base64 encoded, not plain text):
+    kubectl describe secret petclinic-db-secret -n spring-petclinic
+
+  NOTE: If you run the create command twice, it will error saying the secret
+  already exists. That is fine — just don't run it twice.
+
+STEP 3.4: Deploy the Customers Database
+-----------------------------------------
+EXPLANATION: This command uses Helm to install MySQL into your Kubernetes
+cluster using the Bitnami MySQL chart. The --values flag points to your
+configuration file. The name "customers-db" is how the database will be
+known inside Kubernetes.
+
+  Command:
+    helm install customers-db bitnami/mysql \
+      --namespace spring-petclinic \
+      --values k8s/mysql-customers-values.yaml
+
+  Expected output: You will see a message from Helm saying the release was
+  deployed, plus some instructions (you can ignore the instructions).
+
+  Watch the pod start up:
+    kubectl get pods -n spring-petclinic -l app.kubernetes.io/instance=customers-db -w
+
+  Press Ctrl+C to stop watching when the pod shows "Running" status.
+  This can take 1-3 minutes.
+
+STEP 3.5: Deploy the Vets Database
+------------------------------------
+  Command:
+    helm install vets-db bitnami/mysql \
+      --namespace spring-petclinic \
+      --values k8s/mysql-vets-values.yaml
+
+  Watch it start:
+    kubectl get pods -n spring-petclinic | grep vets-db
+
+STEP 3.6: Deploy the Visits Database
+--------------------------------------
+  Command:
+    helm install visits-db bitnami/mysql \
+      --namespace spring-petclinic \
+      --values k8s/mysql-visits-values.yaml
+
+  Watch it start:
+    kubectl get pods -n spring-petclinic | grep visits-db
+
+STEP 3.7: Verify All Three Databases Are Running
+-------------------------------------------------
+EXPLANATION: This checks that all three MySQL pods started successfully.
+
+  Command:
+    kubectl get pods -n spring-petclinic | grep mysql
+
+  Expected output (roughly):
+    customers-db-mysql-0   1/1   Running   0   2m
+    vets-db-mysql-0        1/1   Running   0   90s
+    visits-db-mysql-0      1/1   Running   0   60s
+
+  All three must show STATUS: Running and READY: 1/1
+  If you see "0/1" in the READY column, the pod is still starting. Wait more.
+  If you see "CrashLoopBackOff", see the Troubleshooting section below.
+
+STEP 3.8: Verify the Database Services Exist
+----------------------------------------------
+EXPLANATION: In Kubernetes, a "Service" is a stable network address for a pod.
+Other pods use the Service name (not the pod name) to connect to the database.
+For example, customers-service will connect to MySQL using the hostname
+"customers-db-mysql" — not an IP address.
+
+  Command:
+    kubectl get svc -n spring-petclinic | grep db
+
+  Expected output:
+    customers-db-mysql       ClusterIP   10.x.x.x   3306/TCP
+    vets-db-mysql            ClusterIP   10.x.x.x   3306/TCP
+    visits-db-mysql          ClusterIP   10.x.x.x   3306/TCP
+
+  These internal addresses are how the backend services connect to their
+  respective databases.
+
+STEP 3.9: Test the Database Connection (customers-db)
+------------------------------------------------------
+EXPLANATION: This runs a temporary MySQL client container inside the cluster,
+connects to your database, and runs a test query. It verifies the database
+is actually accepting connections and the credentials work.
+
+  Command:
+    kubectl run mysql-client --rm -it --image=mysql:8 -n spring-petclinic \
+      -- mysql -h customers-db-mysql -u petclinic -ppetclinic petclinic \
+      -e "SHOW TABLES;"
+
+  Breaking this command down:
+  - kubectl run mysql-client: create a temporary pod named mysql-client
+  - --rm: delete the pod automatically when done
+  - -it: attach to it interactively (so you see the output)
+  - --image=mysql:8: use the MySQL 8 container image
+  - -n spring-petclinic: put it in the right namespace
+  - -- mysql ...: the MySQL client command to run inside the pod
+  - -h customers-db-mysql: connect to the customers-db MySQL service
+  - -u petclinic: username
+  - -ppetclinic: password (note: no space after -p)
+  - petclinic: the database name
+  - -e "SHOW TABLES;": run this SQL command
+
+  Expected output (after Spring Boot has initialized the DB — see note below):
+    +---------------------+
+    | Tables_in_petclinic |
+    +---------------------+
+    | owners              |
+    | pets                |
+    | types               |
+    +---------------------+
+
+  NOTE: The tables only appear AFTER the customers-service has connected to
+  the database and run schema.sql. If you test right after deploying MySQL
+  (before deploying customers-service), you might see "Empty set" — that is
+  normal. The tables get created when the app first starts.
+
+  If you see "ERROR 1045 (28000): Access denied", the username/password is
+  wrong. Double-check your secret and values file.
+
+STEP 3.10: Test the vets-db Connection
+----------------------------------------
+  Command:
+    kubectl run mysql-client2 --rm -it --image=mysql:8 -n spring-petclinic \
+      -- mysql -h vets-db-mysql -u petclinic -ppetclinic petclinic \
+      -e "SHOW TABLES;"
+
+STEP 3.11: Test the visits-db Connection
+------------------------------------------
+  Command:
+    kubectl run mysql-client3 --rm -it --image=mysql:8 -n spring-petclinic \
+      -- mysql -h visits-db-mysql -u petclinic -ppetclinic petclinic \
+      -e "SHOW TABLES;"
+
+STEP 3.12: Document the Connection Strings for Your Team
+----------------------------------------------------------
+EXPLANATION: The backend developers (P5 and P6) need to know how to configure
+their services to connect to your databases. Write these down and share in
+your team's WhatsApp/Discord.
+
+  Connection strings (share these with P5 and P6):
+
+  customers-service connects to:
+    Host:     customers-db-mysql
+    Port:     3306
+    Database: petclinic
+    Username: petclinic
+    Password: petclinic (from Kubernetes secret: petclinic-db-secret)
+    Full JDBC URL: jdbc:mysql://customers-db-mysql:3306/petclinic
+
+  vets-service connects to:
+    Host:     vets-db-mysql
+    Port:     3306
+    Database: petclinic
+    Username: petclinic
+    Password: petclinic (from Kubernetes secret: petclinic-db-secret)
+    Full JDBC URL: jdbc:mysql://vets-db-mysql:3306/petclinic
+
+  visits-service connects to:
+    Host:     visits-db-mysql
+    Port:     3306
+    Database: petclinic
+    Username: petclinic
+    Password: petclinic (from Kubernetes secret: petclinic-db-secret)
+    Full JDBC URL: jdbc:mysql://visits-db-mysql:3306/petclinic
+
+================================================================================
+SECTION 4: DAY 4 — VERIFY DATA AFTER BACKEND SERVICES ARE DEPLOYED
+================================================================================
+
+By Day 4, P5 and P6 should have deployed the backend services. Once they do,
+the databases will be automatically populated with sample data.
+
+STEP 4.1: Verify customers-db Has Sample Data
+-----------------------------------------------
+  Command:
+    kubectl run mysql-verify --rm -it --image=mysql:8 -n spring-petclinic \
+      -- mysql -h customers-db-mysql -u petclinic -ppetclinic petclinic \
+      -e "SELECT COUNT(*) AS owner_count FROM owners;"
+
+  Expected output: owner_count = 10
+
+STEP 4.2: Verify vets-db Has Sample Data
+------------------------------------------
+  Command:
+    kubectl run mysql-verify2 --rm -it --image=mysql:8 -n spring-petclinic \
+      -- mysql -h vets-db-mysql -u petclinic -ppetclinic petclinic \
+      -e "SELECT COUNT(*) AS vet_count FROM vets;"
+
+  Expected output: vet_count = 6
+
+STEP 4.3: Check Pets Data
+---------------------------
+  Command:
+    kubectl run mysql-verify3 --rm -it --image=mysql:8 -n spring-petclinic \
+      -- mysql -h customers-db-mysql -u petclinic -ppetclinic petclinic \
+      -e "SELECT * FROM pets LIMIT 5;"
+
+  Expected output: 5 rows showing pet names, birth dates, owner and type IDs.
+
+STEP 4.4: Check All MySQL Pods Are Healthy
+-------------------------------------------
+  Command:
+    kubectl get pods -n spring-petclinic | grep mysql
+
+  All three should show: STATUS = Running, READY = 1/1
+
+STEP 4.5: Check Helm Releases Are Healthy
+-------------------------------------------
+  Command:
+    helm list -n spring-petclinic
+
+  Expected output: 3 rows for customers-db, vets-db, visits-db
+  STATUS column should show "deployed" for all three.
+
+================================================================================
+SECTION 5: DAY 5 — MONITORING & ONGOING HEALTH CHECKS
+================================================================================
+
+STEP 5.1: Watch for Database-Related Errors in the Backend Services
+---------------------------------------------------------------------
+EXPLANATION: If the databases are having problems, the backend services will
+produce error logs. You can check for these to make sure there are no
+connection issues.
+
+  Check customers-service logs for DB errors:
+    kubectl logs -n spring-petclinic -l app=customers-service --tail=50 | grep -i error
+
+  Check vets-service logs for DB errors:
+    kubectl logs -n spring-petclinic -l app=vets-service --tail=50 | grep -i error
+
+  Check visits-service logs for DB errors:
+    kubectl logs -n spring-petclinic -l app=visits-service --tail=50 | grep -i error
+
+  If you see connection refused or access denied errors, the database might
+  have restarted and needs a moment to come back up. Check the pod status.
+
+STEP 5.2: Check MySQL Pod Resource Usage
+------------------------------------------
+  Command (requires metrics-server, installed by P2):
+    kubectl top pods -n spring-petclinic | grep mysql
+
+  This shows CPU and memory usage for each MySQL pod. Normal usage should be
+  low (under 100m CPU, under 300Mi memory for a quiet database).
+
+STEP 5.3: Check PersistentVolumeClaims (disk storage)
+-------------------------------------------------------
+EXPLANATION: MySQL stores data on disk using Kubernetes PersistentVolumes.
+This command confirms the storage was provisioned successfully.
+
+  Command:
+    kubectl get pvc -n spring-petclinic
+
+  Expected output: 3 PVCs (one per MySQL instance), all STATUS = Bound
+  "Bound" means they successfully got their 1Gi of disk space from AWS.
+
+================================================================================
+SECTION 6: DAY 6 — PREPARE YOUR PRESENTATION
+================================================================================
+
+STEP 6.1: Practice Your 5-Minute Demo Script
+----------------------------------------------
+
+Here is exactly what to show and what to say during the presentation:
+
+--- START OF YOUR 5-MINUTE SLOT ---
+
+STEP 1: Show MySQL pods running
+  Command to run live:
+    kubectl get pods -n spring-petclinic | grep mysql
+
+  Say: "I deployed three separate MySQL databases to the EKS cluster —
+        one for each microservice, following the database-per-service pattern
+        of microservices architecture."
+
+STEP 2: Show the Kubernetes secret
+  Command to run live:
+    kubectl get secret petclinic-db-secret -n spring-petclinic
+
+  Say: "Database credentials are stored as a Kubernetes Secret, not hardcoded
+        in config files. The backend services read the password from this secret."
+
+STEP 3: Show Helm releases
+  Command to run live:
+    helm list -n spring-petclinic
+
+  Say: "I used Helm with the Bitnami MySQL chart to deploy the databases.
+        Helm handles all the Kubernetes complexity — StatefulSets, services,
+        PersistentVolumes — out of the box."
+
+STEP 4: Show actual data in the database
+  Command to run live:
+    kubectl run demo-query --rm -it --image=mysql:8 -n spring-petclinic \
+      -- mysql -h customers-db-mysql -u petclinic -ppetclinic petclinic \
+      -e "SELECT first_name, last_name, city FROM owners LIMIT 5;"
+
+  Say: "And here we can see the actual data in the customers database —
+        the owners that were loaded by the customers-service when it first
+        connected."
+
+--- END OF YOUR 5-MINUTE SLOT ---
+
+STEP 6.2: Prepare Backup Evidence (Screenshots)
+-------------------------------------------------
+Take screenshots of:
+1. kubectl get pods output showing all mysql pods Running
+2. kubectl get secret output showing the secret exists
+3. helm list output showing all 3 DB releases deployed
+4. A MySQL query result showing real data
+
+Save these as backups in case the live demo has issues.
+
+================================================================================
+SECTION 7: DAY 7 — PRESENTATION DAY CHECKLIST
+================================================================================
+
+Run these checks BEFORE the presentation starts:
+
+  [ ] kubectl get nodes → shows 2-3 Ready nodes
+  [ ] kubectl get pods -n spring-petclinic | grep mysql → 3 Running pods
+  [ ] kubectl get secret petclinic-db-secret -n spring-petclinic → secret exists
+  [ ] helm list -n spring-petclinic → 3 deployed releases
+  [ ] All tabs open in browser (kubectl terminal ready)
+
+If anything is not Running, check logs:
+  kubectl describe pod <pod-name> -n spring-petclinic
+  kubectl logs <pod-name> -n spring-petclinic
+
+================================================================================
+SECTION 8: TROUBLESHOOTING GUIDE
+================================================================================
+
+PROBLEM: "helm install" fails with "release already exists"
+SOLUTION: The database was already deployed. Check with:
+  helm list -n spring-petclinic
+  If it's there, don't deploy again. If you need to redeploy:
+  helm uninstall customers-db -n spring-petclinic
+  Then run the helm install again.
+
+PROBLEM: MySQL pod stays in "Pending" status forever
+EXPLANATION: Pending means Kubernetes cannot find a node to schedule the pod on.
+Most likely the EKS nodes are full or the PVC cannot be created.
+SOLUTION:
+  kubectl describe pod <pod-name> -n spring-petclinic
+  Look for "Events" at the bottom — they explain why it's pending.
+  Tell P2 that you need more node capacity.
+
+PROBLEM: MySQL pod shows "CrashLoopBackOff"
+EXPLANATION: The pod starts, crashes, restarts, crashes again in a loop.
+SOLUTION:
+  kubectl logs <pod-name> -n spring-petclinic --previous
+  This shows logs from the previous run (before the crash).
+  Common cause: wrong values in your values.yaml file.
+
+PROBLEM: "Access denied for user 'petclinic'"
+EXPLANATION: The username/password in the secret doesn't match what was set
+in the Helm values file.
+SOLUTION: Make sure mysql-password in the secret matches password in values.yaml.
+Both should be "petclinic".
+
+PROBLEM: "No route to host" or connection refused
+EXPLANATION: The service name being used doesn't match the actual K8s service name.
+SOLUTION:
+  kubectl get svc -n spring-petclinic | grep mysql
+  The EXACT names shown there are what the backend services must use as hostname.
+  customers-db-mysql, vets-db-mysql, visits-db-mysql
+
+PROBLEM: kubectl says "Unable to connect to the server"
+EXPLANATION: kubectl is not configured to talk to the EKS cluster.
+SOLUTION:
+  aws eks update-kubeconfig --name petclinic-cluster --region us-east-1
+  Then try again.
+
+PROBLEM: "SHOW TABLES" returns empty set after customer-service is running
+EXPLANATION: The service uses HSQLDB (in-memory) by default, not MySQL.
+The mysql Spring profile must be active for it to use MySQL.
+SOLUTION: Check with P5/P6 that their deployment manifest includes:
+  - name: SPRING_PROFILES_ACTIVE
+    value: "docker,mysql"
+  Without the mysql profile, the service uses an in-memory database and
+  your MySQL database will remain empty.
+
+================================================================================
+SECTION 9: QUICK REFERENCE — COMMANDS YOU WILL USE MOST
+================================================================================
+
+Check all pods in the namespace:
+  kubectl get pods -n spring-petclinic
+
+Check specifically MySQL pods:
+  kubectl get pods -n spring-petclinic | grep mysql
+
+Check Kubernetes services (internal addresses):
+  kubectl get svc -n spring-petclinic
+
+Check your Helm deployments:
+  helm list -n spring-petclinic
+
+View logs of a MySQL pod:
+  kubectl logs -n spring-petclinic <pod-name>
+
+Check PersistentVolumeClaims (disk):
+  kubectl get pvc -n spring-petclinic
+
+Delete a Helm release (if you need to redo):
+  helm uninstall customers-db -n spring-petclinic
+
+Redeploy after uninstall:
+  helm install customers-db bitnami/mysql \
+    --namespace spring-petclinic \
+    --values k8s/mysql-customers-values.yaml
+
+Connect to a running MySQL pod directly (interactive):
+  kubectl exec -it <mysql-pod-name> -n spring-petclinic -- mysql -u petclinic -ppetclinic petclinic
+
+Get all events (useful for debugging):
+  kubectl get events -n spring-petclinic --sort-by='.lastTimestamp'
+
+================================================================================
+SECTION 10: WHAT TO COORDINATE WITH OTHER TEAM MEMBERS
+================================================================================
+
+WITH P2 (AWS Infrastructure Engineer):
+  - Ask P2 when the EKS cluster is ready and what the cluster name is
+  - Ask P2 to confirm the spring-petclinic namespace exists
+  - Tell P2 if your MySQL pods stay in Pending (might need more nodes)
+
+WITH P5 (Customers & Vets Backend):
+  - Tell P5 the exact hostname for their databases:
+      customers-service → hostname: customers-db-mysql, port: 3306
+      vets-service → hostname: vets-db-mysql, port: 3306
+  - Tell P5 to use Spring profile "docker,mysql" to activate MySQL mode
+  - Tell P5 the secret name is: petclinic-db-secret
+
+WITH P6 (Visits & API Gateway):
+  - Tell P6 the exact hostname for visits database:
+      visits-service → hostname: visits-db-mysql, port: 3306
+  - Tell P6 the secret name is: petclinic-db-secret
+
+WITH P8 (Observability Engineer):
+  - If P8 asks about database metrics, MySQL exposes some via standard
+    Prometheus metrics. Helm bitnami/mysql includes a metrics exporter
+    option (not strictly required for this project).
+
+================================================================================
+SECTION 11: YOUR DELIVERABLES SUMMARY
+================================================================================
+
+By end of the project, you must have produced:
+
+  [FILE] k8s/mysql-customers-values.yaml     (committed to git)
+  [FILE] k8s/mysql-vets-values.yaml          (committed to git)
+  [FILE] k8s/mysql-visits-values.yaml        (committed to git)
+  [K8S]  Secret: petclinic-db-secret         (deployed to EKS)
+  [K8S]  Helm release: customers-db          (deployed to EKS)
+  [K8S]  Helm release: vets-db              (deployed to EKS)
+  [K8S]  Helm release: visits-db            (deployed to EKS)
+  [DEMO] 5-minute presentation slot ready
+  [DOCS] Connection strings shared with P5 and P6
+
+================================================================================
+END OF INSTRUCTIONS
+================================================================================
+You've got this. Focus on one step at a time. When something does not work,
+read the error message carefully — it almost always tells you what went wrong.
+Use the Troubleshooting section. Ask your team. And remember: every DevOps
+engineer spends 80% of their time troubleshooting — that IS the job.
+================================================================================
