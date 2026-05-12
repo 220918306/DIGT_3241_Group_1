@@ -6,12 +6,12 @@ metadata:
 spec:
   hard:
     # Total CPU across all pods in this namespace
-    requests.cpu: "2000m"
-    limits.cpu: "3000m"
+    requests.cpu: "4500m"
+    limits.cpu: "7000m"
 
     # Total memory across all pods in this namespace
-    requests.memory: "5Gi"
-    limits.memory: "6Gi"
+    requests.memory: "6Gi"
+    limits.memory: "8Gi"
 
     # Max number of pods allowed
     pods: "20"
