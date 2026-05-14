@@ -2,9 +2,9 @@ name: Build, Push & Deploy to EKS
 
 on:
   push:
-    branches: [main, feature/ci-cd-pipeline]
+    branches: [develop]
   pull_request:
-    branches: [main]
+    branches: [develop]
 
 env:
   AWS_REGION: us-east-1
@@ -75,7 +75,7 @@ jobs:
     name: "CD: Deploy to EKS"
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/feature/ci-cd-pipeline' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
 
     steps:
       - name: Checkout code
