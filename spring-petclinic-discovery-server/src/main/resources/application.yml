@@ -26,4 +26,13 @@ management:
   metrics:
     export:
       prometheus:
+        include: "*"
+
+  endpoint:
+    prometheus:
+      access: unrestricted
+
+  prometheus:
+    metrics:
+      export:
         enabled: true
