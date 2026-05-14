@@ -16,12 +16,16 @@ spring:
   config:
     activate:
       on-profile: docker
-    import: configserver:http://config-server:8888
+    import: configserver:http://config-server:8761/eureka/
 
 management:
   endpoints:
     web:
       exposure:
+        include: prometheus
+  metrics:
+    export:
+      prometheus:
         include: "*"
 
   endpoint:

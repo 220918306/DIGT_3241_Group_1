@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vets-service
+  namespace: petclinic
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vets-service
+  template:
+    metadata:
+      labels:
+        app: vets-service
+    spec:
+      containers:
+        - name: vets-service
+          image: springcommunity/spring-petclinic-vets-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8083
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "docker"
+            - name: CONFIG_SERVER_URL
+              value: http://config-server:8888
+            - name: EUREKA_SERVER_URL
+              value: http://discovery-server:8761/eureka/
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-cred
+                  key: username
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-cred
+                  key: password
+      

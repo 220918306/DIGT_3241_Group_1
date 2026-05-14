@@ -21,6 +21,13 @@ target/
 generated/
 
 **/.DS_Store
+# Build artifacts for services
+**/target/
+**/*.class
+**/*.jar
+*.log
+logs/
+**/logs/
 .terraform/
 *.tfstate
 *.tfstate.backup
