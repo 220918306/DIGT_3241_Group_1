@@ -38,5 +38,5 @@ If you forked this repo as part of a course, bootcamp, or homework assignment:
 Open an issue with:
 - A clear description of the bug
 - Steps to reproduce
-- Expected vs actual behaviour
+- Expected vs actual behavior
 - Spring Boot / Java version
