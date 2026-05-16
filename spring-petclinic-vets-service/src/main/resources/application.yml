@@ -1,12 +1,8 @@
 spring:
   application:
-    name: vets-service
+    name: visits-service
   config:
     import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888/}
-  cache:
-    cache-names: vets
-  profiles:
-    active: production
 ---
 spring:
   config:
@@ -14,16 +10,12 @@ spring:
       on-profile: docker
     import: configserver:http://config-server:8888
 
+---
 management:
   endpoints:
     web:
       exposure:
-        include: prometheus
-  metrics:
-    export:
-      prometheus:
-        enabled: true
-        include: health,prometheus
+        include: prometheus,health
   endpoint:
     health:
       show-details: always
