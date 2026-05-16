@@ -1,4 +1,4 @@
-name: Check PR template completeness
+name: Triage pull requests
 
 on:
   pull_request_target:
@@ -11,28 +11,32 @@ permissions:
   issues: write
 
 jobs:
-  # ── 1. On every PR open/edit: check that the template was filled in ──────────
-  check-template:
-    if: ${{ github.event_name == 'pull_request_target' }}
+  # ── 1. On every PR open/edit ─────────────────────────────────────────────────
+  #   a) Detect non-project practice/test submissions → close immediately
+  #   b) Otherwise, check that the PR template was filled in
+  # Running both checks in the same job ensures they are sequential and never
+  # post two independent comments on the same PR.
+  triage-pr:
+    if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     steps:
-      - name: Ensure needs-information label exists
+      - name: Ensure required labels exist
         uses: actions/github-script@v7
         with:
           script: |
-            try {
-              await github.rest.issues.createLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                name: 'needs-information',
-                color: 'e4e669',
-                description: 'More information is needed before this can be reviewed',
-              });
-            } catch (e) {
-              if (e.status !== 422) throw e; // 422 = already exists, ignore
+            const labels = [
+              { name: 'invalid',            color: 'e11d48', description: 'This does not seem right' },
+              { name: 'needs-information',  color: 'e4e669', description: 'More information is needed before this can be reviewed' },
+            ];
+            for (const label of labels) {
+              try {
+                await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, ...label });
+              } catch (e) {
+                if (e.status !== 422) throw e; // 422 = already exists, ignore
+              }
             }
 
-      - name: Detect incomplete template
+      - name: Check non-project PR patterns then template completeness
         uses: actions/github-script@v7
         with:
           script: |
@@ -42,23 +46,87 @@ jobs:
               pull_number: context.payload.pull_request.number,
             });
 
+            // ── PART A: detect non-project practice / test submissions ────────────────
+            // Only scan title and branch — the PR template body contains the word
+            // "bootcamp" itself and would cause false positives if included.
+            const title  = pr.title || '';
+            const branch = pr.head.ref || '';
+            const combined = `${title} ${branch}`.toLowerCase();
+
+            const nonProjectPatterns = [
+              /\bspc-\d+/i,                                                     // SPC-001, SPC-003-T1 …
+              /add\s+(jenkins|gitlab|github\s+actions)\s+(ci|pipeline)/i,
+              /add\s+ci\s+(workflow|pipeline)/i,
+              /push\s+(image|docker)\s+to\s+(ecr|dockerhub|registry)/i,
+              /add\s+(kubernetes|k8s)\s+manifests?/i,
+              /add\s+monitoring\s+(stack|dashboard)/i,
+              /\bdevops\s+(project|assignment|lab|homework|tp)\b/i,
+              /\b(lab|tp|homework|assignment|exercise)\s*[#\d]/i,
+              /\bbootcamp\b/i,
+            ];
+
+            const matched = nonProjectPatterns.find((pattern) => pattern.test(combined));
+
+            if (matched) {
+              console.log(`Non-project pattern matched: ${matched} — closing PR #${pr.number}.`);
+
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                labels: ['invalid'],
+              });
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: [
+                  `## 👋 Hi @${pr.user.login},`,
+                  '',
+                  'It looks like this Pull Request may be a **practice, test, or course-related submission** rather than a contribution intended for the upstream project.',
+                  '',
+                  'This repository is widely used for learning and experimentation, but PRs opened only to practice on the sample are **out of scope** for the upstream project and will be closed.',
+                  '',
+                  'If you are testing ideas or learning on this sample, please keep those changes in **your own fork**.',
+                  '',
+                  `Please read our [CONTRIBUTING guide](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${context.payload.repository.default_branch}/CONTRIBUTING.md) for details on what kinds of contributions we accept.`,
+                  '',
+                  '_This is an automated message. If you believe this was a mistake, please re-open and leave a comment explaining why your PR is intended for the upstream project._',
+                ].join('\n'),
+              });
+
+              await github.rest.pulls.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                state: 'closed',
+              });
+
+              // Stop here — no need to check the template on a non-project PR.
+              return;
+            }
+
+            console.log(`No non-project pattern detected on PR #${pr.number} — checking template completeness.`);
+
+            // ── PART B: check that the PR template was properly filled in ────────────
             const body = pr.body || '';
 
-            function isIncomplete(body) {
-              if (body.trim().length < 30) return true;
+            function isIncomplete(text) {
+              if (text.trim().length < 30) return true;
               // Template HTML comment still present → body was never edited
-              if (body.includes('<!-- Please describe your change')) return true;
-              // The placeholder issue reference was not replaced
-              if (/Fixes\s*#\s*\(issue\)/.test(body)) return true;
+              if (text.includes('<!-- Please describe your change')) return true;
+              // Placeholder issue reference was not replaced
+              if (/Fixes\s*#\s*\(issue\)/.test(text)) return true;
               // All checklist items still unchecked
-              const unchecked = (body.match(/- \[ \]/g) || []).length;
-              const checked   = (body.match(/- \[x\]/gi) || []).length;
+              const unchecked = (text.match(/- \[ \]/g) || []).length;
+              const checked   = (text.match(/- \[x\]/gi) || []).length;
               if (unchecked >= 3 && checked === 0) return true;
               return false;
             }
 
-            const labels = pr.labels.map(l => l.name);
-            const alreadyFlagged = labels.includes('needs-information');
+            const currentLabels  = pr.labels.map(l => l.name);
+            const alreadyFlagged = currentLabels.includes('needs-information');
 
             if (isIncomplete(body)) {
               if (!alreadyFlagged) {
@@ -92,12 +160,12 @@ jobs:
                     '_This is an automated message._',
                   ].join('\n'),
                 });
+
                 console.log(`PR #${pr.number} flagged as needs-information.`);
               } else {
                 console.log(`PR #${pr.number} still incomplete, already flagged.`);
               }
             } else {
-              // Template is now complete — remove the label if it was set
               if (alreadyFlagged) {
                 await github.rest.issues.removeLabel({
                   owner: context.repo.owner,
@@ -117,9 +185,9 @@ jobs:
               }
             }
 
-  # ── 2. Daily: close PRs still labelled needs-information after 7 days ─────────
+  # ── 2. Daily: close PRs still labelled needs-information after 7 days ────────
   close-stale-incomplete:
-    if: ${{ github.event_name == 'schedule' }}
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - name: Close PRs with incomplete template after 7 days of inactivity
@@ -128,7 +196,6 @@ jobs:
           script: |
             const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-            // Fetch all open PRs labelled needs-information (paginate if needed)
             const prs = await github.paginate(github.rest.pulls.list, {
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -161,7 +228,7 @@ jobs:
                   '',
                   'You are welcome to **re-open it** once the template is fully filled in. A complete description helps maintainers understand the context and intent of your change.',
                   '',
-                  `See our [CONTRIBUTING guide](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${context.payload.repository.default_branch}/CONTRIBUTING.md) for details.`,
+                  `See our [CONTRIBUTING guide](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/CONTRIBUTING.md) for details.`,
                   '',
                   '_This is an automated message._',
                 ].join('\n'),
