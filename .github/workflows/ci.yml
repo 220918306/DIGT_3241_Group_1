@@ -109,7 +109,7 @@ jobs:
               "s|YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com|$ECR_REGISTRY|g" {} +
 
             echo "Applying Kubernetes manifests..."
-            kubectl apply -f k8s/ -n ${{ env.K8S_NAMESPACE }}
+            kubectl apply -f k8s/ -n ${{ env.K8S_NAMESPACE }} --recursive
 
             DEPLOYMENTS=$(kubectl get deployments -n ${{ env.K8S_NAMESPACE }} \
               -o name 2>/dev/null || true)
