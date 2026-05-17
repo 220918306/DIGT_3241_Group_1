@@ -38,6 +38,11 @@ jobs:
 
       - name: Check non-project PR patterns then template completeness
         uses: actions/github-script@v7
+        env:
+          # Classic PAT with read:org scope (store as repo/org secret ORG_READ_PAT).
+          # Required to detect *private* org members — GITHUB_TOKEN only sees public ones.
+          # If the secret is absent the workflow still runs but bypasses public members only.
+          ORG_READ_PAT: ${{ secrets.ORG_READ_PAT }}
         with:
           script: |
             const { data: pr } = await github.rest.pulls.get({
@@ -45,6 +50,36 @@ jobs:
               repo: context.repo.repo,
               pull_number: context.payload.pull_request.number,
             });
+
+            // ── ORG MEMBER BYPASS ────────────────────────────────────────────────────────
+            // GITHUB_TOKEN authenticates as github-actions[bot], which is not an org member.
+            // The checkMembershipForUser endpoint therefore returns 302 for everyone when
+            // using GITHUB_TOKEN — it cannot distinguish members from non-members.
+            //
+            // Solution: use ORG_READ_PAT (a classic PAT with read:org scope stored as a
+            // repo/org secret) only for this call. All write operations below still use
+            // the default GITHUB_TOKEN so automated comments appear as github-actions[bot].
+            //
+            // Fallback: if ORG_READ_PAT is not configured, the GITHUB_TOKEN is used and
+            // only *public* org members are bypassed (302 is treated as non-member).
+            const orgReadToken = process.env.ORG_READ_PAT;
+            const orgClient = orgReadToken
+              ? require('@actions/github').getOctokit(orgReadToken)
+              : github;
+
+            try {
+              const { status } = await orgClient.rest.orgs.checkMembershipForUser({
+                org: context.repo.owner,
+                username: pr.user.login,
+              });
+              if (status === 204) {
+                console.log(`@${pr.user.login} is a ${context.repo.owner} org member — skipping triage.`);
+                return;
+              }
+            } catch (e) {
+              if (e.status !== 404 && e.status !== 302) throw e;
+              // 404 = confirmed non-member; 302 = token lacks org read → treat as non-member
+            }
 
             // ── PART A: detect non-project practice / test submissions ────────────────
             // Only scan title and branch — the PR template body contains the word
