@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: admin-server
-  namespace: petclinic
+  namespace: spring-petclinic
 spec:
   selector:
     app: admin-server
@@ -14,7 +14,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: admin-server
-  namespace: petclinic
+  namespace: spring-petclinic
 spec:
   replicas: 1
   selector:
@@ -27,7 +27,8 @@ spec:
     spec:
       containers:
         - name: admin-server
-          image: ${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/spring-petclinic/admin-server:${VERSION}
+          image: springcommunity/spring-petclinic-admin-server:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9090
           env:
@@ -37,5 +38,3 @@ spec:
               value: http://config-server:8888
             - name: EUREKA_SERVER_URL
               value: http://discovery-server:8761/eureka/
-      imagePullSecrets:
-        - name: ecr-secret
