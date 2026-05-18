@@ -21,17 +21,19 @@ spec:
             - containerPort: 8081
           env:
             - name: SPRING_PROFILES_ACTIVE
-              value: "docker"
+              value: "docker,mysql"
             - name: CONFIG_SERVER_URL
               value: http://config-server:8888
             - name: EUREKA_SERVER_URL
               value: http://discovery-server:8761/eureka/
-            - name: MYSQL_USER
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:mysql://customers-db-mysql:3306/petclinic?allowPublicKeyRetrieval=true&useSSL=false"
+            - name: SPRING_DATASOURCE_USERNAME
               valueFrom:
                 secretKeyRef:
                   name: mysql-cred
                   key: username
-            - name: MYSQL_PASSWORD
+            - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: mysql-cred
