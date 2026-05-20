@@ -1,0 +1,1421 @@
+
+SPRING PETCLINIC MICROSERVICES ON AWS EKS
+7-Day Step-by-Step Playbook — All 9 Roles
+==========================================
+Project: https://github.com/spring-petclinic/spring-petclinic-microservices
+Deployment Target: AWS EKS (Elastic Kubernetes Service)
+Team Size: 9 Members | Duration: 1 Week
+
+
+================================================================
+ROLE ASSIGNMENTS SUMMARY
+================================================================
+P1 — Scrum Master / Project Lead
+
+P2 — AWS Infrastructure Engineer
+P3 — CI/CD Engineer
+P4 — Config & Discovery Owner
+P5 — Backend Dev (Customers & Vets Services)
+P6 — Backend Dev (Visits & API Gateway)
+P7 — Database Administrator
+P8 — Observability Engineer
+
+P9 — QA & Demo Lead
+
+
+================================================================
+DAY 1 — MONDAY: SETUP & ORIENTATION
+================================================================
+
+----------------------------------------------------------------
+P1 — SCRUM MASTER
+----------------------------------------------------------------
+GOAL: GitHub org live, task board ready, kickoff done.
+
+STEP 1: Create GitHub Organization
+  GUI:
+  - Go to https://github.com
+  - Click your profile picture (top right) → "Your organizations"
+  - Click "New organization" → choose Free plan
+  - Name: cohort-petclinic-team (or your team name)
+  - Add all 8 teammates by their GitHub username
+
+STEP 2: Fork the repo into the org
+  GUI:
+  - Go to https://github.com/spring-petclinic/spring-petclinic-microservices
+  - Click "Fork" (top right)
+  - Change owner to your organization (not personal account)
+  - Click "Create fork"
+
+STEP 3: Protect the main branch
+  GUI:
+  - Go to your forked repo → Settings → Branches
+  - Click "Add branch protection rule"
+  - Branch name pattern: main
+  - Check: "Require a pull request before merging"
+  - Click "Create"
+
+STEP 4: Create folder structure
+  CLI:
+  git clone https://github.com/YOUR-ORG/spring-petclinic-microservices.git
+  cd spring-petclinic-microservices
+  mkdir -p docs k8s
+  touch docs/architecture.md docs/aws-setup.md docs/ci-cd.md
+  git add .
+  git commit -m "chore: add docs and k8s folder structure"
+  git push origin main
+
+STEP 5: Create GitHub Project Board
+  GUI:
+  - Go to your org page → "Projects" tab → "New project"
+  - Choose "Board" view
+  - Name: PetClinic Sprint Board
+  - Add columns: To Do | In Progress | Blocked | Done
+  - Create one card per person with their task and due date
+
+STEP 6: Hold kickoff call (30 min)
+  Agenda:
+  - Show everyone the repo and board
+  - Confirm each person's role
+  - Everyone's homework: clone repo and run docker-compose up locally
+  - Set daily standup time (e.g., 9 AM every day)
+  - Create WhatsApp/Discord group for communication
+
+STEP 7: Write architecture overview
+  File: docs/architecture.md
+  Content:
+  ---
+  # Architecture Overview
+
+  ## Services and Owners
+  | Service            | Owner | Port |
+  |--------------------|-------|------|
+  | config-server      | P4    | 8888 |
+  | discovery-server   | P4    | 8761 |
+  | customers-service  | P5    | 8081 |
+  | vets-service       | P5    | 8083 |
+  | visits-service     | P6    | 8082 |
+  | api-gateway        | P6    | 8080 |
+  | MySQL DB           | P7    | 3306 |
+  | Prometheus         | P8    | 9090 |
+  | Grafana            | P8    | 3000 |
+  | Zipkin             | P8    | 9411 |
+
+  ## Deployment: AWS EKS, region us-east-1
+  ---
+
+END OF DAY CHECK: Message team — reply YES if app runs locally, NO if stuck.
+
+----------------------------------------------------------------
+P2 — AWS INFRASTRUCTURE ENGINEER
+----------------------------------------------------------------
+GOAL: AWS account ready, tools installed, EKS creation plan confirmed.
+
+STEP 1: Set up AWS account
+  GUI:
+  - Go to https://aws.amazon.com → Create account (if not already done)
+  - Enable MFA on root account
+  - Create an IAM user for yourself:
+    → IAM → Users → Add user
+    → Name: eks-admin
+    → Permissions: AdministratorAccess (for this project)
+    → Download access keys (CSV)
+
+STEP 2: Install required tools
+  CLI (Mac):
+  brew install awscli eksctl kubectl helm
+
+  CLI (Ubuntu/WSL):
+  # AWS CLI
+  curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+  unzip awscliv2.zip && sudo ./aws/install
+
+  # eksctl
+  curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+  sudo mv /tmp/eksctl /usr/local/bin
+
+  # kubectl
+  curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+  sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+
+  # helm
+  curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+STEP 3: Configure AWS CLI
+  CLI:
+  aws configure
+  # Enter: Access Key ID, Secret Access Key, Region: us-east-1, Output: json
+
+STEP 4: Verify everything is working
+  CLI:
+  aws sts get-caller-identity
+  eksctl version
+  kubectl version --client
+  helm version
+
+STEP 5: Clone repo locally
+  CLI:
+  git clone https://github.com/YOUR-ORG/spring-petclinic-microservices.git
+  cd spring-petclinic-microservices
+
+STEP 6: Run app locally to understand it
+  CLI:
+  docker-compose up
+  # Open browser: http://localhost:8080
+
+----------------------------------------------------------------
+P3 — CI/CD ENGINEER
+----------------------------------------------------------------
+GOAL: Understand the codebase build system, plan the pipeline.
+
+STEP 1: Clone the repo and explore
+  CLI:
+  git clone https://github.com/YOUR-ORG/spring-petclinic-microservices.git
+  cd spring-petclinic-microservices
+  ls -la   # Explore structure
+
+STEP 2: Run the app locally
+  CLI:
+  docker-compose up
+  # Verify app runs at http://localhost:8080
+
+STEP 3: Understand the Maven build
+  CLI:
+  ./mvnw clean package -DskipTests
+  # This builds all services as JAR files
+
+STEP 4: Build Docker images locally
+  CLI:
+  ./mvnw clean install -P buildDocker -DskipTests
+  docker images | grep springcommunity
+
+STEP 5: Create AWS ECR repositories (one per service)
+  CLI:
+  aws ecr create-repository --repository-name petclinic/config-server --region us-east-1
+  aws ecr create-repository --repository-name petclinic/discovery-server --region us-east-1
+  aws ecr create-repository --repository-name petclinic/customers-service --region us-east-1
+  aws ecr create-repository --repository-name petclinic/vets-service --region us-east-1
+  aws ecr create-repository --repository-name petclinic/visits-service --region us-east-1
+  aws ecr create-repository --repository-name petclinic/api-gateway --region us-east-1
+
+STEP 6: Draft the GitHub Actions workflow file
+  Create: .github/workflows/ci.yml (full content on Day 2)
+
+----------------------------------------------------------------
+P4 — CONFIG & DISCOVERY OWNER
+----------------------------------------------------------------
+GOAL: Understand config-server and discovery-server deeply.
+
+STEP 1: Clone and run locally
+  CLI:
+  git clone https://github.com/YOUR-ORG/spring-petclinic-microservices.git
+  cd spring-petclinic-microservices
+  docker-compose up config-server discovery-server
+
+STEP 2: Visit Eureka dashboard
+  Browser: http://localhost:8761
+  (You should see the Eureka service registry UI)
+
+STEP 3: Understand config-server
+  CLI:
+  cat spring-petclinic-config-server/src/main/resources/application.yml
+  # Note: it reads config from a Git repo
+
+STEP 4: Study the config repository
+  Browser: https://github.com/spring-petclinic/spring-petclinic-microservices-config
+  # This is where all service configs live — bookmark this
+
+STEP 5: Plan your Kubernetes manifests (write on Day 3)
+  Files you will create:
+  - k8s/config-server-deployment.yaml
+  - k8s/config-server-service.yaml
+  - k8s/discovery-server-deployment.yaml
+  - k8s/discovery-server-service.yaml
+
+----------------------------------------------------------------
+P5 — BACKEND DEV (CUSTOMERS & VETS)
+----------------------------------------------------------------
+GOAL: Understand customers-service and vets-service.
+
+STEP 1: Clone and run locally
+  CLI:
+  git clone https://github.com/YOUR-ORG/spring-petclinic-microservices.git
+  cd spring-petclinic-microservices
+  docker-compose up
+
+STEP 2: Test customers API
+  CLI:
+  curl http://localhost:8081/owners
+  curl http://localhost:8081/owners/1
+
+STEP 3: Test vets API
+  CLI:
+  curl http://localhost:8083/vets
+
+STEP 4: Understand the service code
+  CLI:
+  cat spring-petclinic-customers-service/src/main/resources/application.yml
+  cat spring-petclinic-vets-service/src/main/resources/application.yml
+
+STEP 5: Plan Kubernetes manifests (write on Day 3-4)
+  Files you will create:
+  - k8s/customers-service-deployment.yaml
+  - k8s/customers-service-service.yaml
+  - k8s/vets-service-deployment.yaml
+  - k8s/vets-service-service.yaml
+
+----------------------------------------------------------------
+P6 — BACKEND DEV (VISITS & API GATEWAY)
+----------------------------------------------------------------
+GOAL: Understand visits-service and api-gateway.
+
+STEP 1: Clone and run locally
+  CLI:
+  git clone https://github.com/YOUR-ORG/spring-petclinic-microservices.git
+  cd spring-petclinic-microservices
+  docker-compose up
+
+STEP 2: Test visits API
+  CLI:
+  curl http://localhost:8082/owners/1/pets/1/visits
+
+STEP 3: Test API gateway routing
+  Browser: http://localhost:8080
+  # Gateway is the single entry point — try navigating the full app
+
+STEP 4: Understand gateway config
+  CLI:
+  cat spring-petclinic-api-gateway/src/main/resources/application.yml
+  # Note the routes defined for each backend service
+
+STEP 5: Plan Kubernetes manifests (write on Day 3-4)
+  Files you will create:
+  - k8s/visits-service-deployment.yaml
+  - k8s/visits-service-service.yaml
+  - k8s/api-gateway-deployment.yaml
+  - k8s/api-gateway-service.yaml  (type: LoadBalancer)
+
+----------------------------------------------------------------
+P7 — DATABASE ADMINISTRATOR
+----------------------------------------------------------------
+GOAL: Understand the data model, plan MySQL on Kubernetes.
+
+STEP 1: Clone and run locally
+  CLI:
+  git clone https://github.com/YOUR-ORG/spring-petclinic-microservices.git
+  cd spring-petclinic-microservices
+  docker-compose up
+
+STEP 2: Locate the schema files
+  CLI:
+  find . -name "schema.sql" -o -name "data.sql"
+  # Three databases: customers, vets, visits — one per service
+
+STEP 3: Review schema
+  CLI:
+  cat spring-petclinic-customers-service/src/main/resources/db/mysql/schema.sql
+  cat spring-petclinic-vets-service/src/main/resources/db/mysql/schema.sql
+  cat spring-petclinic-visits-service/src/main/resources/db/mysql/schema.sql
+
+STEP 4: Add Helm repo for MySQL
+  CLI:
+  helm repo add bitnami https://charts.bitnami.com/bitnami
+  helm repo update
+  helm search repo bitnami/mysql
+
+STEP 5: Plan secrets (write on Day 3)
+  You will create Kubernetes secrets for DB credentials:
+  - petclinic-db-secret (username + password)
+
+----------------------------------------------------------------
+P8 — OBSERVABILITY ENGINEER
+----------------------------------------------------------------
+GOAL: Understand monitoring setup, plan Prometheus/Grafana.
+
+STEP 1: Clone and run locally
+  CLI:
+  git clone https://github.com/YOUR-ORG/spring-petclinic-microservices.git
+  cd spring-petclinic-microservices
+  docker-compose up
+
+STEP 2: Access monitoring tools locally
+  Browser:
+  - Prometheus: http://localhost:9090
+  - Grafana: http://localhost:3000 (admin/admin)
+  - Zipkin: http://localhost:9411
+
+STEP 3: Add Helm repos for monitoring stack
+  CLI:
+  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+  helm repo add grafana https://grafana.github.io/helm-charts
+  helm repo update
+
+STEP 4: Explore Grafana locally
+  GUI:
+  - Log in at http://localhost:3000
+  - Go to Dashboards → explore the JVM dashboard
+  - Note what metrics are displayed — you'll recreate this on EKS
+
+----------------------------------------------------------------
+P9 — QA & DEMO LEAD
+----------------------------------------------------------------
+GOAL: Understand the full app flow, plan the demo script.
+
+STEP 1: Clone and run locally
+  CLI:
+  git clone https://github.com/YOUR-ORG/spring-petclinic-microservices.git
+  cd spring-petclinic-microservices
+  docker-compose up
+
+STEP 2: Explore the full app in browser
+  Browser: http://localhost:8080
+  Try:
+  - View all owners
+  - Add a new owner
+  - Add a pet to an owner
+  - Schedule a visit for a pet
+  - View the vets list
+
+STEP 3: Write the demo script (draft)
+  File: docs/demo-script.md
+  Cover:
+  1. Show EKS cluster running (kubectl get pods)
+  2. Open the app in browser (via LoadBalancer IP)
+  3. Add a new owner live
+  4. Add a pet live
+  5. Book a visit live
+  6. Show Grafana dashboard with live metrics
+
+STEP 4: Write test cases
+  File: docs/test-cases.md
+  Cover:
+  - Can the homepage load?
+  - Can we add an owner?
+  - Can we add a pet?
+  - Can we book a visit?
+  - Do all services show in Eureka?
+  - Do metrics appear in Grafana?
+
+
+================================================================
+DAY 2 — TUESDAY: BUILD & PROVISION
+================================================================
+
+----------------------------------------------------------------
+P1 — SCRUM MASTER
+----------------------------------------------------------------
+GOAL: Run standup, unblock team, monitor progress.
+
+Daily Standup (9 AM, 15 min):
+  Ask each person:
+  1. Did you run the app locally? (from Day 1 homework)
+  2. What are you working on today?
+  3. Are you blocked?
+
+Tasks:
+- Follow up with anyone who couldn't run locally — help them troubleshoot
+- Monitor GitHub board — move cards to "In Progress"
+- Check in specifically with P2: "Is EKS cluster on track for today?"
+- Start writing the presentation outline in docs/presentation.md
+
+Presentation outline structure:
+  1. P1 — Project intro + architecture (5 min)
+  2. P2 — EKS cluster demo (5 min)
+  3. P3 — CI/CD pipeline walkthrough (5 min)
+  4. P4 — Config + Discovery demo (5 min)
+  5. P7 — Database setup (5 min)
+  6. P5 — Customers + Vets demo (5 min)
+  7. P6 — Visits + Gateway demo (5 min)
+  8. P8 — Monitoring dashboard (5 min)
+  9. P9 — Live app demo (5 min)
+
+----------------------------------------------------------------
+P2 — AWS INFRASTRUCTURE ENGINEER
+----------------------------------------------------------------
+GOAL: EKS cluster fully provisioned and accessible.
+
+STEP 1: Create the EKS cluster
+  CLI:
+  eksctl create cluster \
+    --name petclinic-cluster \
+    --region us-east-1 \
+    --nodegroup-name standard-workers \
+    --node-type t3.medium \
+    --nodes 3 \
+    --nodes-min 2 \
+    --nodes-max 4 \
+    --managed
+  # This takes 15-20 minutes — grab a coffee!
+
+STEP 2: Verify cluster is running
+  CLI:
+  kubectl get nodes
+  kubectl get namespaces
+  # You should see 3 nodes in Ready state
+
+STEP 3: Create a namespace for the app
+  CLI:
+  kubectl create namespace spring-petclinic
+  kubectl get namespaces
+
+STEP 4: Create ECR repositories (if P3 hasn't already)
+  CLI:
+  REGION=us-east-1
+  ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+  for SERVICE in config-server discovery-server customers-service vets-service visits-service api-gateway; do
+    aws ecr create-repository \
+      --repository-name petclinic/$SERVICE \
+      --region $REGION
+  done
+
+STEP 5: Share kubeconfig with team
+  CLI:
+  # Update kubeconfig
+  aws eks update-kubeconfig --name petclinic-cluster --region us-east-1
+
+  # Share the cluster name and region with P4, P5, P6, P7, P8
+  # They run this same command to get access
+
+STEP 6: Install AWS Load Balancer Controller
+  CLI:
+  # Add IAM policy for load balancer
+  curl -O https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.5.4/docs/install/iam_policy.json
+
+  aws iam create-policy \
+    --policy-name AWSLoadBalancerControllerIAMPolicy \
+    --policy-document file://iam_policy.json
+
+  # Install via helm
+  helm repo add eks https://aws.github.io/eks-charts
+  helm repo update
+  helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+    -n kube-system \
+    --set clusterName=petclinic-cluster \
+    --set serviceAccount.create=true
+
+COST TIP: To save money at end of each day:
+  eksctl delete nodegroup --cluster petclinic-cluster --name standard-workers --region us-east-1
+  # Re-create next morning with the same eksctl create command
+
+----------------------------------------------------------------
+P3 — CI/CD ENGINEER
+----------------------------------------------------------------
+GOAL: GitHub Actions pipeline builds and pushes images to ECR.
+
+STEP 1: Set GitHub Secrets
+  GUI:
+  - Go to your GitHub repo → Settings → Secrets and variables → Actions
+  - Add secrets:
+    AWS_ACCESS_KEY_ID     → your IAM user access key
+    AWS_SECRET_ACCESS_KEY → your IAM user secret key
+    AWS_REGION            → us-east-1
+    AWS_ACCOUNT_ID        → your 12-digit AWS account ID
+
+STEP 2: Create the GitHub Actions workflow
+  CLI:
+  mkdir -p .github/workflows
+  cat > .github/workflows/ci.yml << 'EOF'
+  name: Build and Push to ECR
+
+  on:
+    push:
+      branches: [main]
+    pull_request:
+      branches: [main]
+
+  env:
+    AWS_REGION: us-east-1
+    ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+
+  jobs:
+    build-and-push:
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@v3
+
+        - name: Set up JDK 17
+          uses: actions/setup-java@v3
+          with:
+            java-version: '17'
+            distribution: 'temurin'
+
+        - name: Configure AWS credentials
+          uses: aws-actions/configure-aws-credentials@v2
+          with:
+            aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+            aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            aws-region: ${{ env.AWS_REGION }}
+
+        - name: Login to Amazon ECR
+          id: login-ecr
+          uses: aws-actions/amazon-ecr-login@v1
+
+        - name: Build Docker images
+          run: ./mvnw clean install -P buildDocker -DskipTests
+
+        - name: Tag and push images to ECR
+          run: |
+            ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}
+            REGION=us-east-1
+            SERVICES="config-server discovery-server customers-service vets-service visits-service api-gateway"
+            for SERVICE in $SERVICES; do
+              docker tag springcommunity/$SERVICE:latest \
+                $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/petclinic/$SERVICE:latest
+              docker push \
+                $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/petclinic/$SERVICE:latest
+            done
+  EOF
+
+STEP 3: Commit and push
+  CLI:
+  git add .github/workflows/ci.yml
+  git commit -m "ci: add GitHub Actions build and push to ECR"
+  git push origin main
+
+STEP 4: Monitor the pipeline
+  GUI:
+  - Go to your GitHub repo → Actions tab
+  - Watch the workflow run — it should go green
+  - If it fails, click on the failed step to see the error log
+
+STEP 5: Verify images in ECR
+  CLI:
+  aws ecr list-images --repository-name petclinic/config-server --region us-east-1
+
+----------------------------------------------------------------
+P4 — CONFIG & DISCOVERY OWNER
+----------------------------------------------------------------
+GOAL: Write Kubernetes manifests for config and discovery servers.
+
+STEP 1: Create config-server deployment
+  CLI:
+  cat > k8s/config-server-deployment.yaml << 'EOF'
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: config-server
+    namespace: spring-petclinic
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: config-server
+    template:
+      metadata:
+        labels:
+          app: config-server
+      spec:
+        containers:
+          - name: config-server
+            image: YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/petclinic/config-server:latest
+            ports:
+              - containerPort: 8888
+            env:
+              - name: SPRING_PROFILES_ACTIVE
+                value: "native"
+            readinessProbe:
+              httpGet:
+                path: /actuator/health
+                port: 8888
+              initialDelaySeconds: 30
+              periodSeconds: 10
+  ---
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: config-server
+    namespace: spring-petclinic
+  spec:
+    selector:
+      app: config-server
+    ports:
+      - port: 8888
+        targetPort: 8888
+    type: ClusterIP
+  EOF
+
+STEP 2: Create discovery-server deployment
+  CLI:
+  cat > k8s/discovery-server-deployment.yaml << 'EOF'
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: discovery-server
+    namespace: spring-petclinic
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: discovery-server
+    template:
+      metadata:
+        labels:
+          app: discovery-server
+      spec:
+        containers:
+          - name: discovery-server
+            image: YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/petclinic/discovery-server:latest
+            ports:
+              - containerPort: 8761
+            env:
+              - name: SPRING_PROFILES_ACTIVE
+                value: "docker"
+            readinessProbe:
+              httpGet:
+                path: /actuator/health
+                port: 8761
+              initialDelaySeconds: 30
+              periodSeconds: 10
+  ---
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: discovery-server
+    namespace: spring-petclinic
+  spec:
+    selector:
+      app: discovery-server
+    ports:
+      - port: 8761
+        targetPort: 8761
+    type: ClusterIP
+  EOF
+
+STEP 3: Commit manifests
+  CLI:
+  git add k8s/
+  git commit -m "feat(p4): add config and discovery server K8s manifests"
+  git push origin main
+
+----------------------------------------------------------------
+P5, P6, P7, P8, P9 — DAY 2
+----------------------------------------------------------------
+P5: Write customers-service and vets-service K8s manifests
+    (Same pattern as P4's config-server — change image name and port)
+    customers-service: port 8081
+    vets-service: port 8083
+
+P6: Write visits-service and api-gateway K8s manifests
+    visits-service: port 8082
+    api-gateway: port 8080, Service type: LoadBalancer
+
+P7: Write MySQL Helm values file and Kubernetes secrets
+
+P8: Write Prometheus + Grafana Helm values, plan dashboard
+
+P9: Continue refining demo script, set up test checklist
+
+
+================================================================
+DAY 3 — WEDNESDAY: DEPLOY INFRASTRUCTURE
+================================================================
+
+----------------------------------------------------------------
+P2 — AWS INFRASTRUCTURE ENGINEER
+----------------------------------------------------------------
+GOAL: Cluster verified, team has kubectl access.
+
+STEP 1: Verify cluster is up
+  CLI:
+  kubectl get nodes -o wide
+  kubectl get namespaces
+
+STEP 2: Give all team members cluster access
+  CLI:
+  # Each team member runs:
+  aws eks update-kubeconfig --name petclinic-cluster --region us-east-1
+  kubectl get pods -n spring-petclinic   # Should return "No resources found" (that's OK)
+
+STEP 3: Set up ECR pull permissions
+  CLI:
+  # Allow EKS nodes to pull from ECR
+  kubectl create secret docker-registry ecr-secret \
+    --docker-server=YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com \
+    --docker-username=AWS \
+    --docker-password=$(aws ecr get-login-password --region us-east-1) \
+    -n spring-petclinic
+
+STEP 4: Install metrics-server (needed for resource monitoring)
+  CLI:
+  kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+  kubectl get deployment metrics-server -n kube-system
+
+----------------------------------------------------------------
+P4 — CONFIG & DISCOVERY OWNER
+----------------------------------------------------------------
+GOAL: Deploy config-server and discovery-server to EKS.
+
+STEP 1: Deploy config-server
+  CLI:
+  kubectl apply -f k8s/config-server-deployment.yaml
+  kubectl get pods -n spring-petclinic
+  kubectl logs -n spring-petclinic -l app=config-server
+
+STEP 2: Wait for config-server to be ready
+  CLI:
+  kubectl wait --for=condition=ready pod -l app=config-server \
+    -n spring-petclinic --timeout=120s
+
+STEP 3: Deploy discovery-server
+  CLI:
+  kubectl apply -f k8s/discovery-server-deployment.yaml
+  kubectl get pods -n spring-petclinic
+  kubectl logs -n spring-petclinic -l app=discovery-server
+
+STEP 4: Verify both are running
+  CLI:
+  kubectl get pods -n spring-petclinic
+  # Both should show STATUS: Running
+
+STEP 5: Port-forward to test locally
+  CLI:
+  kubectl port-forward -n spring-petclinic svc/discovery-server 8761:8761
+  # Browser: http://localhost:8761 (Eureka dashboard)
+
+----------------------------------------------------------------
+P7 — DATABASE ADMINISTRATOR
+----------------------------------------------------------------
+GOAL: MySQL deployed and accessible to all backend services.
+
+STEP 1: Create database secrets
+  CLI:
+  kubectl create secret generic petclinic-db-secret \
+    --from-literal=mysql-root-password=petclinic-root \
+    --from-literal=mysql-password=petclinic \
+    --from-literal=mysql-user=petclinic \
+    -n spring-petclinic
+
+STEP 2: Create Helm values for MySQL (3 databases needed)
+  CLI:
+  # MySQL for customers
+  cat > k8s/mysql-customers-values.yaml << 'EOF'
+  auth:
+    rootPassword: petclinic-root
+    database: petclinic
+    username: petclinic
+    password: petclinic
+  primary:
+    persistence:
+      size: 1Gi
+  EOF
+
+STEP 3: Deploy MySQL via Helm (one per service)
+  CLI:
+  helm install customers-db bitnami/mysql \
+    --namespace spring-petclinic \
+    --values k8s/mysql-customers-values.yaml
+
+  helm install vets-db bitnami/mysql \
+    --namespace spring-petclinic \
+    --values k8s/mysql-customers-values.yaml
+
+  helm install visits-db bitnami/mysql \
+    --namespace spring-petclinic \
+    --values k8s/mysql-customers-values.yaml
+
+STEP 4: Verify databases are running
+  CLI:
+  kubectl get pods -n spring-petclinic | grep mysql
+  kubectl get svc -n spring-petclinic | grep db
+
+STEP 5: Test database connection
+  CLI:
+  kubectl run mysql-client --rm -it --image=mysql:8 -n spring-petclinic \
+    -- mysql -h customers-db-mysql -u petclinic -ppetclinic petclinic -e "SHOW TABLES;"
+
+----------------------------------------------------------------
+P3 — CI/CD ENGINEER
+----------------------------------------------------------------
+GOAL: Pipeline fully working, all images in ECR.
+
+STEP 1: Verify all images are pushed to ECR
+  CLI:
+  ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+  for SERVICE in config-server discovery-server customers-service vets-service visits-service api-gateway; do
+    echo "=== $SERVICE ==="
+    aws ecr describe-images \
+      --repository-name petclinic/$SERVICE \
+      --region us-east-1 \
+      --query 'imageDetails[0].imagePushedAt'
+  done
+
+STEP 2: Add CD step to pipeline (deploy to EKS on push to main)
+  Add to .github/workflows/ci.yml:
+  ---
+        - name: Update kubeconfig
+          run: |
+            aws eks update-kubeconfig --name petclinic-cluster --region us-east-1
+
+        - name: Deploy to EKS
+          run: |
+            kubectl apply -f k8s/ -n spring-petclinic
+  ---
+
+----------------------------------------------------------------
+P5, P6 — DAY 3
+----------------------------------------------------------------
+GOAL: Finalize and review all Kubernetes manifests.
+
+P5 — customers-service manifest example:
+  CLI:
+  cat > k8s/customers-service-deployment.yaml << 'EOF'
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: customers-service
+    namespace: spring-petclinic
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: customers-service
+    template:
+      metadata:
+        labels:
+          app: customers-service
+      spec:
+        containers:
+          - name: customers-service
+            image: YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/petclinic/customers-service:latest
+            ports:
+              - containerPort: 8081
+            env:
+              - name: SPRING_PROFILES_ACTIVE
+                value: "docker,mysql"
+              - name: SPRING_DATASOURCE_URL
+                value: "jdbc:mysql://customers-db-mysql:3306/petclinic"
+              - name: SPRING_DATASOURCE_USERNAME
+                valueFrom:
+                  secretKeyRef:
+                    name: petclinic-db-secret
+                    key: mysql-user
+              - name: SPRING_DATASOURCE_PASSWORD
+                valueFrom:
+                  secretKeyRef:
+                    name: petclinic-db-secret
+                    key: mysql-password
+  ---
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: customers-service
+    namespace: spring-petclinic
+  spec:
+    selector:
+      app: customers-service
+    ports:
+      - port: 8081
+        targetPort: 8081
+    type: ClusterIP
+  EOF
+
+P6 — api-gateway service must be LoadBalancer type:
+  spec:
+    type: LoadBalancer   # This creates an AWS ELB automatically
+
+
+================================================================
+DAY 4 — THURSDAY: DEPLOY ALL SERVICES
+================================================================
+
+----------------------------------------------------------------
+P5 — BACKEND DEV (CUSTOMERS & VETS)
+----------------------------------------------------------------
+GOAL: customers-service and vets-service running on EKS.
+
+STEP 1: Deploy customers-service
+  CLI:
+  kubectl apply -f k8s/customers-service-deployment.yaml
+  kubectl get pods -n spring-petclinic -l app=customers-service
+  kubectl logs -n spring-petclinic -l app=customers-service --tail=50
+
+STEP 2: Wait for readiness
+  CLI:
+  kubectl rollout status deployment/customers-service -n spring-petclinic
+
+STEP 3: Deploy vets-service
+  CLI:
+  kubectl apply -f k8s/vets-service-deployment.yaml
+  kubectl rollout status deployment/vets-service -n spring-petclinic
+
+STEP 4: Test via port-forward
+  CLI:
+  kubectl port-forward -n spring-petclinic svc/customers-service 8081:8081
+  curl http://localhost:8081/owners
+  # Should return JSON list of owners
+
+  kubectl port-forward -n spring-petclinic svc/vets-service 8083:8083
+  curl http://localhost:8083/vets
+  # Should return JSON list of vets
+
+STEP 5: Debug if failing
+  CLI:
+  kubectl describe pod -n spring-petclinic -l app=customers-service
+  kubectl logs -n spring-petclinic -l app=customers-service --previous
+
+----------------------------------------------------------------
+P6 — BACKEND DEV (VISITS & API GATEWAY)
+----------------------------------------------------------------
+GOAL: visits-service and api-gateway running on EKS.
+
+STEP 1: Deploy visits-service
+  CLI:
+  kubectl apply -f k8s/visits-service-deployment.yaml
+  kubectl rollout status deployment/visits-service -n spring-petclinic
+
+STEP 2: Deploy api-gateway
+  CLI:
+  kubectl apply -f k8s/api-gateway-deployment.yaml
+  kubectl rollout status deployment/api-gateway -n spring-petclinic
+
+STEP 3: Get the LoadBalancer external IP
+  CLI:
+  kubectl get svc api-gateway -n spring-petclinic
+  # Wait for EXTERNAL-IP to appear (takes 2-3 minutes)
+  # Watch it:
+  kubectl get svc api-gateway -n spring-petclinic -w
+
+STEP 4: Test the full app
+  CLI:
+  EXTERNAL_IP=$(kubectl get svc api-gateway -n spring-petclinic \
+    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+  echo "App URL: http://$EXTERNAL_IP"
+  curl http://$EXTERNAL_IP/owners
+
+  Browser: http://EXTERNAL_IP
+  # Full PetClinic app should load!
+
+STEP 5: Share the URL with the whole team via WhatsApp/Discord
+
+----------------------------------------------------------------
+P2 — AWS INFRASTRUCTURE ENGINEER
+----------------------------------------------------------------
+GOAL: Verify all pods running, assist with networking issues.
+
+STEP 1: Overall cluster health check
+  CLI:
+  kubectl get pods -n spring-petclinic
+  kubectl get svc -n spring-petclinic
+  kubectl get deployments -n spring-petclinic
+
+STEP 2: Check resource usage
+  CLI:
+  kubectl top nodes
+  kubectl top pods -n spring-petclinic
+
+STEP 3: Check events for any warnings
+  CLI:
+  kubectl get events -n spring-petclinic --sort-by='.lastTimestamp'
+
+STEP 4: If pods are in CrashLoopBackOff
+  CLI:
+  kubectl logs -n spring-petclinic POD_NAME --previous
+  kubectl describe pod -n spring-petclinic POD_NAME
+
+----------------------------------------------------------------
+P4 — CONFIG & DISCOVERY OWNER
+----------------------------------------------------------------
+GOAL: Verify all services registered in Eureka.
+
+STEP 1: Port-forward Eureka dashboard
+  CLI:
+  kubectl port-forward -n spring-petclinic svc/discovery-server 8761:8761
+
+STEP 2: Check in browser
+  Browser: http://localhost:8761
+  You should see all services registered:
+  - CUSTOMERS-SERVICE
+  - VETS-SERVICE
+  - VISITS-SERVICE
+  - API-GATEWAY
+
+STEP 3: Take a screenshot — this is your demo evidence!
+
+----------------------------------------------------------------
+P7 — DATABASE ADMINISTRATOR
+----------------------------------------------------------------
+GOAL: Verify all databases accessible and schemas initialized.
+
+STEP 1: Check all MySQL pods
+  CLI:
+  kubectl get pods -n spring-petclinic | grep mysql
+
+STEP 2: Verify customers database has data
+  CLI:
+  kubectl run mysql-test --rm -it --image=mysql:8 -n spring-petclinic \
+    -- mysql -h customers-db-mysql -u petclinic -ppetclinic petclinic \
+    -e "SELECT COUNT(*) FROM owners;"
+
+STEP 3: Verify vets database
+  CLI:
+  kubectl run mysql-test2 --rm -it --image=mysql:8 -n spring-petclinic \
+    -- mysql -h vets-db-mysql -u petclinic -ppetclinic petclinic \
+    -e "SELECT COUNT(*) FROM vets;"
+
+STEP 4: Document all database connection strings for the team
+
+
+================================================================
+DAY 5 — FRIDAY: MONITORING & TESTING
+================================================================
+
+----------------------------------------------------------------
+P8 — OBSERVABILITY ENGINEER
+----------------------------------------------------------------
+GOAL: Prometheus + Grafana + Zipkin fully deployed and showing data.
+
+STEP 1: Deploy Prometheus
+  CLI:
+  helm install prometheus prometheus-community/prometheus \
+    --namespace spring-petclinic \
+    --set server.service.type=ClusterIP \
+    --set alertmanager.enabled=false
+
+STEP 2: Deploy Grafana
+  CLI:
+  helm install grafana grafana/grafana \
+    --namespace spring-petclinic \
+    --set service.type=LoadBalancer \
+    --set adminPassword=petclinic123 \
+    --set persistence.enabled=false
+
+STEP 3: Get Grafana URL
+  CLI:
+  kubectl get svc grafana -n spring-petclinic
+  # Wait for EXTERNAL-IP, then open in browser
+  # Login: admin / petclinic123
+
+STEP 4: Add Prometheus as data source in Grafana
+  GUI:
+  - Go to Grafana → Configuration → Data Sources
+  - Click "Add data source" → Choose Prometheus
+  - URL: http://prometheus-server.spring-petclinic.svc.cluster.local
+  - Click "Save & Test"
+
+STEP 5: Import JVM dashboard
+  GUI:
+  - Grafana → Dashboards → Import
+  - Enter dashboard ID: 4701
+  - Select Prometheus data source
+  - Click Import
+  - You should see JVM metrics for all services
+
+STEP 6: Deploy Zipkin
+  CLI:
+  kubectl create deployment zipkin \
+    --image=openzipkin/zipkin \
+    --namespace=spring-petclinic
+  kubectl expose deployment zipkin \
+    --type=LoadBalancer \
+    --port=9411 \
+    --namespace=spring-petclinic
+
+STEP 7: Get Zipkin URL and verify traces
+  CLI:
+  kubectl get svc zipkin -n spring-petclinic
+  # Open EXTERNAL-IP:9411 in browser
+  # Click "Run Query" — you should see traces from the app
+
+----------------------------------------------------------------
+P9 — QA & DEMO LEAD
+----------------------------------------------------------------
+GOAL: Run all test cases, document results, prepare final demo.
+
+STEP 1: Run test checklist
+  CLI / Browser — test each item:
+
+  Test 1: App loads
+    curl http://GATEWAY_EXTERNAL_IP
+    Expected: 200 OK, HTML page loads
+
+  Test 2: Owners list API
+    curl http://GATEWAY_EXTERNAL_IP/api/customer/owners
+    Expected: JSON array of owners
+
+  Test 3: Vets list API
+    curl http://GATEWAY_EXTERNAL_IP/api/vet/vets
+    Expected: JSON array of vets
+
+  Test 4: Add new owner (via browser)
+    Browser: http://GATEWAY_EXTERNAL_IP → Find Owners → Add Owner
+    Fill form and submit
+    Expected: New owner appears in list
+
+  Test 5: All pods running
+    CLI: kubectl get pods -n spring-petclinic
+    Expected: All pods STATUS = Running
+
+  Test 6: Eureka shows all services
+    kubectl port-forward -n spring-petclinic svc/discovery-server 8761:8761
+    Browser: http://localhost:8761
+    Expected: All 4+ services registered
+
+  Test 7: Grafana shows metrics
+    Browser: http://GRAFANA_EXTERNAL_IP
+    Expected: JVM dashboard shows data
+
+STEP 2: Record issues found
+  File: docs/test-results.md
+  Format:
+  | Test | Status | Notes |
+  |------|--------|-------|
+  | App loads | PASS | - |
+  | Owners API | PASS | - |
+
+STEP 3: Finalize demo script
+  Rehearse the 5-minute live demo flow:
+  1. Open terminal → kubectl get pods (show everything running)
+  2. Open browser → show app homepage
+  3. Add owner "John Demo"
+  4. Add pet "Buddy" to John
+  5. Book a visit for Buddy
+  6. Switch to Grafana → show metrics spike
+
+
+================================================================
+DAY 6 — SATURDAY: HARDEN & PREPARE
+================================================================
+
+----------------------------------------------------------------
+P1 — SCRUM MASTER
+----------------------------------------------------------------
+GOAL: Final documentation, presentation deck ready.
+
+STEP 1: Finalize architecture diagram in docs/architecture.md
+STEP 2: Write project README with:
+  - What the project does
+  - Architecture overview
+  - Team roles
+  - How to deploy (summary of commands)
+  - Live app URL
+  - Grafana URL
+
+STEP 3: Create presentation deck
+  Slide structure:
+  Slide 1: Project title + team names
+  Slide 2: What is Spring PetClinic Microservices?
+  Slide 3: Architecture diagram (services + AWS)
+  Slide 4: Team structure (Scrum roles)
+  Slide 5-13: One slide per person (their work + demo)
+  Slide 14: Lessons learned
+  Slide 15: Q&A
+
+----------------------------------------------------------------
+ALL TEAM MEMBERS — DAY 6
+----------------------------------------------------------------
+GOAL: Each person prepares their 5-minute presentation slot.
+
+Prepare to show:
+  P2: kubectl get nodes, eks cluster details, eksctl create command
+  P3: GitHub Actions run (green), ECR images listed
+  P4: Eureka dashboard with all services, config-server logs
+  P5: customers + vets pods running, API curl output
+  P6: visits + gateway pods, browser showing the app
+  P7: MySQL pods running, database query output
+  P8: Grafana dashboard with live metrics, Zipkin traces
+  P9: Full live demo walkthrough
+
+Fix any remaining bugs:
+  CLI:
+  kubectl get pods -n spring-petclinic   # All should be Running
+  kubectl get events -n spring-petclinic --sort-by='.lastTimestamp' | grep -i error
+
+----------------------------------------------------------------
+P9 — QA & DEMO LEAD
+----------------------------------------------------------------
+GOAL: Run full dry-run of the presentation.
+
+STEP 1: Schedule a team call for dry-run (Saturday afternoon)
+STEP 2: Each person does their slot — time it!
+STEP 3: Identify who is going over time and help them cut content
+STEP 4: Ensure the live demo works end-to-end
+STEP 5: Backup plan: record a video of the app working (in case of live demo failure)
+  CLI:
+  # On Mac: use QuickTime screen recording
+  # On Windows: use OBS or Xbox Game Bar (Win+G)
+
+
+================================================================
+DAY 7 — SUNDAY: PRESENTATION DAY
+================================================================
+
+----------------------------------------------------------------
+ALL TEAM MEMBERS — MORNING
+----------------------------------------------------------------
+GOAL: Final checks before the session.
+
+STEP 1: Verify cluster is up
+  CLI:
+  kubectl get nodes
+  kubectl get pods -n spring-petclinic
+  # All should be Running
+
+STEP 2: Verify app is accessible
+  CLI:
+  EXTERNAL_IP=$(kubectl get svc api-gateway -n spring-petclinic \
+    -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+  curl http://$EXTERNAL_IP
+  echo "App URL: http://$EXTERNAL_IP"
+
+STEP 3: Verify Grafana is accessible
+  CLI:
+  kubectl get svc grafana -n spring-petclinic
+  # Note the EXTERNAL-IP for Grafana
+
+STEP 4: Open all tabs in advance
+  Open tabs before the session starts:
+  - Tab 1: GitHub repo
+  - Tab 2: GitHub Actions (CI/CD pipeline)
+  - Tab 3: Live app (api-gateway EXTERNAL-IP)
+  - Tab 4: Eureka dashboard (port-forward 8761)
+  - Tab 5: Grafana dashboard
+  - Tab 6: Zipkin dashboard
+  - Tab 7: AWS Console → EKS cluster
+  - Tab 8: Terminal with kubectl ready
+
+----------------------------------------------------------------
+PRESENTATION ORDER & WHAT TO SHOW
+----------------------------------------------------------------
+
+P1 — Scrum Master (5 min)
+  Show: Architecture diagram, GitHub org, project board
+  Say: "We had one week, 9 people, and we deployed a production-grade
+        microservices app to AWS EKS. Here's how we organized it..."
+
+P2 — AWS Infrastructure (5 min)
+  Show: AWS Console → EKS cluster, kubectl get nodes
+  CLI during demo:
+    kubectl get nodes
+    kubectl get namespaces
+    eksctl get cluster
+  Say: "I provisioned the entire AWS infrastructure using eksctl..."
+
+P3 — CI/CD Engineer (5 min)
+  Show: GitHub Actions tab → show a green pipeline run
+  Show: AWS ECR → list of repositories with images
+  CLI during demo:
+    aws ecr list-images --repository-name petclinic/api-gateway --region us-east-1
+  Say: "Every time code is pushed to main, the pipeline automatically
+        builds, tests, and deploys to EKS..."
+
+P4 — Config & Discovery (5 min)
+  Show: Eureka dashboard (port-forward or screenshot)
+  CLI during demo:
+    kubectl get pods -n spring-petclinic -l app=config-server
+    kubectl logs -n spring-petclinic -l app=discovery-server --tail=20
+  Say: "All microservices register themselves here at startup..."
+
+P7 — Database Admin (5 min)
+  Show: MySQL pods running, secret exists
+  CLI during demo:
+    kubectl get pods -n spring-petclinic | grep mysql
+    kubectl get secret petclinic-db-secret -n spring-petclinic
+  Say: "We deployed three separate MySQL databases, one per service..."
+
+P5 — Customers & Vets (5 min)
+  Show: Pods running, API response
+  CLI during demo:
+    kubectl get pods -n spring-petclinic | grep -E "customers|vets"
+    curl http://EXTERNAL_IP/api/customer/owners
+    curl http://EXTERNAL_IP/api/vet/vets
+
+P6 — Visits & API Gateway (5 min)
+  Show: App in browser, LoadBalancer service
+  CLI during demo:
+    kubectl get svc api-gateway -n spring-petclinic
+    kubectl get pods -n spring-petclinic | grep -E "visits|gateway"
+  Browser: open the live app
+
+P8 — Observability (5 min)
+  Show: Grafana dashboard with live metrics, Zipkin traces
+  GUI:
+  - Show JVM heap memory graph
+  - Show HTTP request rate graph
+  - Show a Zipkin trace for an API call
+  Say: "We can see real-time metrics for every microservice..."
+
+P9 — Live Demo (5 min)
+  Show: Full end-to-end app walkthrough
+  Steps:
+  1. Open http://EXTERNAL_IP
+  2. Click "Find Owners" — show existing owners
+  3. Click "Add Owner" — add a new owner live
+  4. Click the owner → "Add New Pet"
+  5. Add a pet
+  6. Click "Add Visit" — book a visit
+  7. Show the visit appears in history
+  Say: "This is a fully working veterinary clinic management system,
+        deployed on AWS EKS, built by our team in one week."
+
+----------------------------------------------------------------
+POST-PRESENTATION — CLEANUP (IMPORTANT!)
+----------------------------------------------------------------
+To avoid AWS charges after the session:
+
+STEP 1: Delete EKS cluster
+  CLI:
+  eksctl delete cluster --name petclinic-cluster --region us-east-1
+  # This takes 10-15 minutes and deletes all resources
+
+STEP 2: Delete ECR repositories (optional)
+  CLI:
+  for SERVICE in config-server discovery-server customers-service vets-service visits-service api-gateway; do
+    aws ecr delete-repository \
+      --repository-name petclinic/$SERVICE \
+      --region us-east-1 \
+      --force
+  done
+
+STEP 3: Verify no running resources
+  CLI:
+  aws eks list-clusters --region us-east-1
+  aws ec2 describe-instances --region us-east-1 \
+    --query 'Reservations[].Instances[?State.Name==`running`].[InstanceId,InstanceType]'
+
+
+================================================================
+QUICK REFERENCE — MOST USED COMMANDS
+================================================================
+
+Get all pods:
+  kubectl get pods -n spring-petclinic
+
+Get all services:
+  kubectl get svc -n spring-petclinic
+
+Get external IPs:
+  kubectl get svc -n spring-petclinic | grep LoadBalancer
+
+View logs:
+  kubectl logs -n spring-petclinic -l app=SERVICE_NAME --tail=100
+
+Describe a pod (debug):
+  kubectl describe pod -n spring-petclinic POD_NAME
+
+Restart a deployment:
+  kubectl rollout restart deployment/SERVICE_NAME -n spring-petclinic
+
+Port-forward a service locally:
+  kubectl port-forward -n spring-petclinic svc/SERVICE_NAME LOCAL_PORT:REMOTE_PORT
+
+Apply all K8s manifests:
+  kubectl apply -f k8s/ -n spring-petclinic
+
+Check cluster resources:
+  kubectl top nodes
+  kubectl top pods -n spring-petclinic
+
+Delete all app resources:
+  kubectl delete namespace spring-petclinic
+
+Delete entire cluster:
+  eksctl delete cluster --name petclinic-cluster --region us-east-1
+
+
+================================================================
+END OF DOCUMENT
+================================================================
+Good luck to the entire team! You've got this.
+

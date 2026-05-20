@@ -1,0 +1,10 @@
+auth:
+  rootPassword: petclinic-root
+  database: petclinic
+  username: petclinic
+  password: petclinic
+primary:
+  resourcesPreset: micro
+  persistence:
+    size: 1Gi
+    storageClass: gp2
