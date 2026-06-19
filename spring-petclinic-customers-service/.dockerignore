@@ -1,0 +1,9 @@
+.git
+.github
+.idea
+.vscode
+src
+.mvn
+README.md
+target/test-classes
+target/*.original

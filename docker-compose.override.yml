@@ -1,0 +1,24 @@
+services:
+  config-server:
+    environment:
+      JAVA_OPTS: "-Xms128m -Xmx256m"
+
+  discovery-server:
+    environment:
+      JAVA_OPTS: "-Xms128m -Xmx256m"
+
+  customers-service:
+    environment:
+      JAVA_OPTS: "-Xms128m -Xmx256m"
+
+  vets-service:
+    environment:
+      JAVA_OPTS: "-Xms128m -Xmx256m"
+
+  visits-service:
+    environment:
+      JAVA_OPTS: "-Xms128m -Xmx256m"
+
+  api-gateway:
+    environment:
+      JAVA_OPTS: "-Xms128m -Xmx256m"
