@@ -19,14 +19,12 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 
-/**
- * @author Oded Shopen
- */
 @EnableDiscoveryClient
 @SpringBootApplication
-public class GenAIServiceApplication {
+public class GenAiApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(GenAIServiceApplication.class, args);
+		SpringApplication.run(GenAiApplication.class, args);
 	}
+
 }
